@@ -1,0 +1,6 @@
+/anvil
+/anvil.exe
+/dist/
+*.test
+coverage.out
+*.prof

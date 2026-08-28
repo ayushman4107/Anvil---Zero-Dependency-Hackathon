@@ -1,0 +1,18 @@
+Anvil Phase 0 zero-dependency proof
+Generated: 2026-08-29
+Toolchain: go version go1.27.0 windows/amd64
+
+Command:
+go list -deps -f '{{if and (not .Standard) (not .Module.Main)}}{{.ImportPath}}{{end}}' ./...
+
+Output:
+(no external non-standard packages)
+
+Command:
+go list -m all
+
+Output:
+github.com/ayushman4107/Anvil---Zero-Dependency-Hackathon
+
+Manifest check:
+go.mod contains only the module path and Go version; it has no require directive.
