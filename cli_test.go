@@ -19,6 +19,9 @@ func TestRunHelp(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Phase 1 raw-TCP lifecycle proof") {
 		t.Fatalf("help output has stale lifecycle status: %q", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "Phase 2 strict HTTP/1.1") {
+		t.Fatalf("help output has stale codec status: %q", stdout.String())
+	}
 	if stderr.Len() != 0 {
 		t.Fatalf("help wrote to stderr: %q", stderr.String())
 	}

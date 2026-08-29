@@ -2,7 +2,7 @@
 
 Anvil is an explainable reverse proxy and resilience-testing lab built for Track C of the Zero Dependency Hackathon. Its core promise is to make every routing, failover, circuit-breaker, and recovery decision observable and reproducible from one offline-capable binary.
 
-> Phase 1 status: the reusable raw-TCP lifecycle foundation is implemented and tested. The reverse proxy and resilience features are intentionally not claimed yet.
+> Phase 2 status: the reusable raw-TCP lifecycle and strict transport-agnostic HTTP/1.1 codec are implemented and tested. The reverse proxy and resilience features are intentionally not claimed yet.
 
 ## Requirements
 
@@ -66,6 +66,26 @@ The shipped server now provides:
 - Containment of connection-handler panics so one faulty client path cannot crash the process.
 - Real-socket tests for saturation, slow-client isolation, deadline reclamation, graceful drain, forced close, repeated lifecycle use, and concurrent echo traffic.
 
+## Phase 2 HTTP/1.1 codec
+
+The codec operates on `bufio.Reader` and `io.Writer` boundaries without `net/http` or `net/http/httputil`. It currently provides:
+
+- Ordered request, response, header, trailer, and body-framing types.
+- Strict HTTP/1.1 request-line and status-line parsing.
+- Origin-form targets and `OPTIONS *`; CONNECT, absolute-form, HTTP/2 prefaces, upgrades, and `Expect` are rejected explicitly.
+- Incremental CRLF line handling whose result is independent of TCP fragmentation.
+- Configurable start-line, header-byte, header-count, body, chunk-line, chunk-count, trailer-byte, and trailer-count limits.
+- Required single valid Host authority, including bracketed IPv6 and numeric ports.
+- Exact fixed-length framing with unread next-message bytes preserved.
+- Chunked decoding with bounded validated extensions and trailers.
+- Rejection of Transfer-Encoding plus Content-Length, conflicting lengths, unsupported codings, obs-fold, bare LF, control bytes, and forbidden trailer fields.
+- Fixed and chunked request/response serialization with CRLF-injection prevention and short-write handling.
+- Correct body suppression for HEAD, informational, 204, and 304 responses.
+- Fixed, chunked, and close-delimited upstream response parsing.
+- Table-driven protocol cases, arbitrary-fragment readers, deterministic mutation coverage, and native Go fuzz targets.
+
+The codec is not connected to the public TCP listener yet. That vertical integration, sequential keep-alive loop, routing, and proxy transaction belong to the next phase.
+
 ## Planned differentiator
 
 Anvil's competitive edge is causal resilience evidence: a bounded decision ledger explains why an upstream was selected or skipped, when health and circuit state changed, what the client observed, and how the system recovered. Deterministic experiments turn that ledger into a machine-readable and human-readable resilience receipt.
@@ -91,7 +111,7 @@ See `STDLIB.md` for substitutions actually implemented so far. Planned substitut
 
 ## Current limitations
 
-Phase 1 is not a reverse proxy. It does not yet parse HTTP, route requests, balance upstreams, run health checks, open circuits, publish telemetry, or execute experiments. These are acceptance-gated phases, and the README will be updated only when each capability is working and tested.
+Phase 2 is not a reverse proxy. It does not yet route requests, connect to upstreams, balance backends, run health checks, open circuits, publish product telemetry, or execute experiments. These are acceptance-gated phases, and the README will be updated only when each capability is working and tested.
 
 ## License
 

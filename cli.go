@@ -54,8 +54,8 @@ Commands:
   dev-echo    Run the Phase 1 raw-TCP lifecycle proof
   help        Show this help
 
-The current build includes the Phase 1 raw TCP lifecycle foundation. Planned
-product commands fail explicitly until their acceptance gates are complete.`)
+The current build includes the Phase 1 TCP lifecycle and Phase 2 strict HTTP/1.1
+codec. Product commands fail explicitly until their acceptance gates complete.`)
 }
 
 func runPlannedCommand(name string, args []string, stdout, stderr io.Writer) int {
