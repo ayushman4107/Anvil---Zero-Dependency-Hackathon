@@ -64,6 +64,7 @@ func serveHTTPConnection(ctx context.Context, connection *clientConn, router *ro
 			}
 			return nil
 		}
+		request.RemoteAddr = connection.RemoteAddr().String()
 
 		response := dispatchHTTPRequest(ctx, router, request)
 		closeAfterResponse := !request.KeepAlive || response.Close || response.Headers.HasToken("Connection", "close") || requestNumber == config.MaxRequestsPerConnection
@@ -142,6 +143,7 @@ func textResponse(status int, body string) *httpResponse {
 func writeBufferedHTTPResponse(writer *bufio.Writer, response *httpResponse, requestMethod string) (bool, error) {
 	var encoded bytes.Buffer
 	usedFallback := false
+	commitState := response.CommitState
 	if err := writeHTTPResponse(&encoded, response, requestMethod); err != nil {
 		usedFallback = true
 		fallback := textResponse(500, "internal server error\n")
@@ -151,6 +153,7 @@ func writeBufferedHTTPResponse(writer *bufio.Writer, response *httpResponse, req
 			return usedFallback, fallbackErr
 		}
 	}
+	commitState.MarkCommitted()
 	if err := writeAll(writer, encoded.Bytes()); err != nil {
 		return usedFallback, err
 	}

@@ -2,7 +2,7 @@
 
 Anvil is an explainable reverse proxy and resilience-testing lab built for Track C of the Zero Dependency Hackathon. Its core promise is to make every routing, failover, circuit-breaker, and recovery decision observable and reproducible from one offline-capable binary.
 
-> Phase 3 status: the raw-TCP lifecycle, strict HTTP/1.1 codec, network-facing sequential connection loop, and immutable method-aware router are implemented and tested. The reverse proxy and resilience features are intentionally not claimed yet.
+> Phase 4 status: the raw-TCP lifecycle, strict HTTP/1.1 codec, server/router, and bounded single-attempt reverse-proxy transaction are implemented and tested. Health-driven failover, retries, circuit breaking, and product telemetry are intentionally not claimed yet.
 
 ## Requirements
 
@@ -41,6 +41,7 @@ anvil proxy
 anvil demo
 anvil experiment
 anvil bench
+anvil dev-proxy
 anvil dev-http
 anvil dev-echo
 ```
@@ -62,6 +63,16 @@ anvil dev-http --listen 127.0.0.1:8080
 ```
 
 It exposes `GET /health`, `GET /hello/:name`, and `POST /echo` through Anvil's own parser, router, and serializer. It is deliberately labelled as a development proof rather than the unfinished proxy product.
+
+The Phase 4 proxy proof accepts one or more repeatable upstreams:
+
+```sh
+anvil dev-proxy --listen 127.0.0.1:8080 \
+  --upstream api-a=127.0.0.1:9001 \
+  --upstream api-b=127.0.0.1:9002
+```
+
+All valid methods and origin-form paths are forwarded. Upstreams rotate in basic round-robin order, each has a hard in-flight bound, and each Phase 4 transaction makes exactly one attempt.
 
 ## Phase 1 TCP foundation
 
@@ -110,6 +121,25 @@ The codec is now connected to the bounded Phase 1 TCP lifecycle. The network-fac
 
 Requests are processed one at a time on each connection. Anvil does not execute pipelined requests concurrently; a fully buffered next request is retained and processed only after the previous response completes.
 
+## Phase 4 bounded reverse-proxy transaction
+
+The first complete client-to-upstream vertical slice now provides:
+
+- Immutable backend identities and stable atomic round-robin selection across a configured pool.
+- A hard per-backend in-flight admission bound with idempotent exactly-once reservation release.
+- Context-aware TCP dialing plus independent upstream dial, write, and response deadlines.
+- Structured upstream request reconstruction through Anvil's own writer—never mutation of an assumed first TCP read.
+- Parsing of `Connection` before removal of every nominated field and all known hop-by-hop fields.
+- Authority/`Host` rewriting, `Via` append in both directions, and cryptographically random per-transaction `X-Anvil-Request-ID` values.
+- Default distrust and replacement of inbound `Forwarded` and `X-Forwarded-*` values using the immediate validated peer address.
+- Preservation of duplicate and unknown end-to-end headers, bounded bodies, chunked coding, and permitted trailers.
+- Strict upstream response parsing, bounded informational responses, and reconstruction of close-delimited responses with a safe `Content-Length`.
+- Honest single-attempt mappings: refusal, incomplete, or malformed upstreams produce `502`; admission exhaustion produces `503`; dial/read/write timeouts produce `504`.
+- Conservative downstream commitment state that becomes immutable before encoded response bytes enter the downstream writer.
+- Real-socket tests using two Anvil-engine fixtures, a standard-library client oracle, malformed raw fixtures, one-attempt proof, and concurrent admission stress.
+
+Phase 4 intentionally opens a fresh upstream connection per request and sends `Connection: close`. Connection reuse will be introduced only with the lifecycle and health ownership required to make pooling safe.
+
 ## Planned differentiator
 
 Anvil's competitive edge is causal resilience evidence: a bounded decision ledger explains why an upstream was selected or skipped, when health and circuit state changed, what the client observed, and how the system recovered. Deterministic experiments turn that ledger into a machine-readable and human-readable resilience receipt.
@@ -129,13 +159,13 @@ The mandatory design, protocol boundaries, test strategy, demo, and execution ga
 - Production code imports only the Go standard library.
 - Anvil does not vendor or copy third-party package source.
 - The runtime does not shell out to tools or depend on network services.
-- The raw server and future proxy core do not use `net/http`; tests may use it only as an independent compatibility oracle.
+- The raw server and proxy core do not use `net/http`; tests may use it only as an independent compatibility oracle.
 
 See `STDLIB.md` for substitutions actually implemented so far. Planned substitutions remain in `STDLIB_DRAFT.md` and do not count as shipped work.
 
 ## Current limitations
 
-Phase 3 is a raw HTTP server and router, not yet a reverse proxy. It does not connect to upstreams, balance backends, run health checks, open circuits, publish product telemetry, or execute experiments. These are acceptance-gated phases, and the README will be updated only when each capability is working and tested.
+Phase 4 is a working bounded reverse-proxy slice, but the product `proxy` command remains gated until JSON route/pool configuration and the resilience core exist. There is no health-driven eligibility, automatic retry, least-in-flight policy, upstream connection pool, circuit breaker, `Proxy-Status`, decision ledger, dashboard, experiment runner, or benchmark engine yet.
 
 ## License
 

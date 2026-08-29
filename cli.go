@@ -33,6 +33,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runDevEcho(args[1:], stdout, stderr)
 	case "dev-http":
 		return runDevHTTP(args[1:], stdout, stderr)
+	case "dev-proxy":
+		return runDevProxy(args[1:], stdout, stderr)
 	case "proxy", "demo", "experiment", "bench":
 		return runPlannedCommand(args[0], args[1:], stdout, stderr)
 	default:
@@ -55,11 +57,12 @@ Commands:
   bench       Benchmark the Anvil data path (planned)
   dev-echo    Run the Phase 1 raw-TCP lifecycle proof
   dev-http    Run the Phase 3 raw HTTP server/router proof
+  dev-proxy   Run the Phase 4 bounded reverse-proxy proof
   help        Show this help
 
 The current build includes the Phase 1 TCP lifecycle, Phase 2 strict HTTP/1.1
-codec, and Phase 3 network-facing server/router. Product commands fail explicitly
-until their acceptance gates complete.`)
+codec, Phase 3 network-facing server/router, and Phase 4 bounded proxy
+transaction. Product commands fail explicitly until their acceptance gates complete.`)
 }
 
 func runDevHTTP(args []string, stdout, stderr io.Writer) int {

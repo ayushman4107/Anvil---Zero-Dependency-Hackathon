@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 )
 
 const httpVersion11 = "HTTP/1.1"
@@ -69,26 +70,42 @@ func (h headerFields) HasToken(name, token string) bool {
 }
 
 type httpRequest struct {
-	Method    string
-	Target    string
-	Version   string
-	Headers   headerFields
-	Trailers  headerFields
-	Body      []byte
-	BodyMode  bodyMode
-	KeepAlive bool
-}
-
-type httpResponse struct {
+	Method     string
+	Target     string
 	Version    string
-	StatusCode int
-	Reason     string
 	Headers    headerFields
 	Trailers   headerFields
 	Body       []byte
 	BodyMode   bodyMode
 	KeepAlive  bool
-	Close      bool
+	RemoteAddr string
+}
+
+type responseCommitState struct {
+	committed atomic.Bool
+}
+
+func (s *responseCommitState) MarkCommitted() {
+	if s != nil {
+		s.committed.Store(true)
+	}
+}
+
+func (s *responseCommitState) Committed() bool {
+	return s != nil && s.committed.Load()
+}
+
+type httpResponse struct {
+	Version     string
+	StatusCode  int
+	Reason      string
+	Headers     headerFields
+	Trailers    headerFields
+	Body        []byte
+	BodyMode    bodyMode
+	KeepAlive   bool
+	Close       bool
+	CommitState *responseCommitState
 }
 
 type httpLimits struct {
