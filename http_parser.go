@@ -86,7 +86,7 @@ func readHTTPResponse(reader *bufio.Reader, limits httpLimits, requestMethod str
 	if err := validateConnectionFields(headers, "response headers"); err != nil {
 		return nil, err
 	}
-	if strings.EqualFold(requestMethod, "CONNECT") || statusCode == 101 || headers.HasToken("Connection", "upgrade") || len(headers.Values("Upgrade")) != 0 {
+	if successfulConnectResponse(requestMethod, statusCode) || statusCode == 101 || headers.HasToken("Connection", "upgrade") || len(headers.Values("Upgrade")) != 0 {
 		return nil, newProtocolError(protocolUnsupportedFeature, "response headers", "tunnels and protocol upgrades are unsupported")
 	}
 
@@ -691,6 +691,10 @@ func hexadecimalValue(value byte) (uint64, bool) {
 
 func responseMustNotHaveBody(requestMethod string, statusCode int) bool {
 	return strings.EqualFold(requestMethod, "HEAD") || statusCode >= 100 && statusCode < 200 || statusCode == 204 || statusCode == 304
+}
+
+func successfulConnectResponse(requestMethod string, statusCode int) bool {
+	return strings.EqualFold(requestMethod, "CONNECT") && statusCode >= 200 && statusCode < 300
 }
 
 func maxInt() int {

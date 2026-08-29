@@ -15,6 +15,7 @@ const (
 	defaultIdleTimeoutMS  = 30_000
 	defaultShutdownMS     = 5_000
 	defaultForceCloseMS   = 1_000
+	defaultMaxRequests    = defaultMaxRequestsPerConnection
 )
 
 // Config contains the small runtime foundation shared by Anvil commands.
@@ -28,6 +29,7 @@ type Config struct {
 	IdleTimeoutMS  int    `json:"idle_timeout_ms"`
 	ShutdownMS     int    `json:"shutdown_timeout_ms"`
 	ForceCloseMS   int    `json:"force_close_timeout_ms"`
+	MaxRequests    int    `json:"max_requests_per_connection"`
 }
 
 func DefaultConfig() Config {
@@ -39,6 +41,7 @@ func DefaultConfig() Config {
 		IdleTimeoutMS:  defaultIdleTimeoutMS,
 		ShutdownMS:     defaultShutdownMS,
 		ForceCloseMS:   defaultForceCloseMS,
+		MaxRequests:    defaultMaxRequests,
 	}
 }
 
@@ -69,7 +72,17 @@ func (c Config) Validate() error {
 	if c.ForceCloseMS <= 0 {
 		return fmt.Errorf("force_close_timeout_ms must be greater than zero")
 	}
+	if c.MaxRequests <= 0 {
+		return fmt.Errorf("max_requests_per_connection must be greater than zero")
+	}
 	return nil
+}
+
+func (c Config) httpServerConfig() httpServerConfig {
+	return httpServerConfig{
+		Limits:                   defaultHTTPLimits(),
+		MaxRequestsPerConnection: c.MaxRequests,
+	}
 }
 
 func (c Config) tcpServerConfig() tcpServerConfig {

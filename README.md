@@ -2,7 +2,7 @@
 
 Anvil is an explainable reverse proxy and resilience-testing lab built for Track C of the Zero Dependency Hackathon. Its core promise is to make every routing, failover, circuit-breaker, and recovery decision observable and reproducible from one offline-capable binary.
 
-> Phase 2 status: the reusable raw-TCP lifecycle and strict transport-agnostic HTTP/1.1 codec are implemented and tested. The reverse proxy and resilience features are intentionally not claimed yet.
+> Phase 3 status: the raw-TCP lifecycle, strict HTTP/1.1 codec, network-facing sequential connection loop, and immutable method-aware router are implemented and tested. The reverse proxy and resilience features are intentionally not claimed yet.
 
 ## Requirements
 
@@ -41,6 +41,8 @@ anvil proxy
 anvil demo
 anvil experiment
 anvil bench
+anvil dev-http
+anvil dev-echo
 ```
 
 These product commands are registered and currently fail with an explicit status instead of pretending unfinished functionality exists.
@@ -52,6 +54,14 @@ anvil dev-echo --listen 127.0.0.1:8080
 ```
 
 It accepts raw TCP clients concurrently and exercises the same reusable lifecycle foundation the HTTP engine will use.
+
+The Phase 3 HTTP proof can be started with:
+
+```sh
+anvil dev-http --listen 127.0.0.1:8080
+```
+
+It exposes `GET /health`, `GET /hello/:name`, and `POST /echo` through Anvil's own parser, router, and serializer. It is deliberately labelled as a development proof rather than the unfinished proxy product.
 
 ## Phase 1 TCP foundation
 
@@ -84,7 +94,21 @@ The codec operates on `bufio.Reader` and `io.Writer` boundaries without `net/htt
 - Fixed, chunked, and close-delimited upstream response parsing.
 - Table-driven protocol cases, arbitrary-fragment readers, deterministic mutation coverage, and native Go fuzz targets.
 
-The codec is not connected to the public TCP listener yet. That vertical integration, sequential keep-alive loop, routing, and proxy transaction belong to the next phase.
+## Phase 3 HTTP server and route tree
+
+The codec is now connected to the bounded Phase 1 TCP lifecycle. The network-facing slice provides:
+
+- One `bufio.Reader` and writer per admitted connection, with sequential HTTP/1.1 keep-alive and a configurable request-count bound.
+- Correct default persistence and explicit closure for `Connection: close`, request-limit exhaustion, protocol errors, and internal handler failures.
+- Safe protocol mappings: malformed requests return `400`, oversized bodies `413`, unsupported transfer codings `501`, and unsupported expectations `417`; each parse failure closes the connection.
+- Buffered generated-response validation before socket commit, including a bounded `500` fallback for handler errors, panics, nil responses, or unsafe generated headers.
+- A method-first immutable segment trie with static, `:parameter`, and terminal `*wildcard` routes, plus an explicit any-method bucket.
+- Static-over-parameter-over-wildcard precedence, deterministic `Allow` values for `405`, and distinction between `404` and `405`.
+- Query exclusion and an explicit no-decode policy: the router matches the validated raw escaped path exactly once and returns raw escaped captures, so `%2F` is never double-decoded into a segment separator.
+- Real-socket tests for standard-library client reuse, one-byte fragmentation, multiple buffered requests, closure, error mapping, route outcomes, panic containment, and request-count limits.
+- Concurrent frozen-router lookup tests suitable for the race detector on supported toolchains.
+
+Requests are processed one at a time on each connection. Anvil does not execute pipelined requests concurrently; a fully buffered next request is retained and processed only after the previous response completes.
 
 ## Planned differentiator
 
@@ -105,13 +129,13 @@ The mandatory design, protocol boundaries, test strategy, demo, and execution ga
 - Production code imports only the Go standard library.
 - Anvil does not vendor or copy third-party package source.
 - The runtime does not shell out to tools or depend on network services.
-- The raw server and proxy core will not use `net/http`; tests may use it only as an independent compatibility oracle.
+- The raw server and future proxy core do not use `net/http`; tests may use it only as an independent compatibility oracle.
 
 See `STDLIB.md` for substitutions actually implemented so far. Planned substitutions remain in `STDLIB_DRAFT.md` and do not count as shipped work.
 
 ## Current limitations
 
-Phase 2 is not a reverse proxy. It does not yet route requests, connect to upstreams, balance backends, run health checks, open circuits, publish product telemetry, or execute experiments. These are acceptance-gated phases, and the README will be updated only when each capability is working and tested.
+Phase 3 is a raw HTTP server and router, not yet a reverse proxy. It does not connect to upstreams, balance backends, run health checks, open circuits, publish product telemetry, or execute experiments. These are acceptance-gated phases, and the README will be updated only when each capability is working and tested.
 
 ## License
 

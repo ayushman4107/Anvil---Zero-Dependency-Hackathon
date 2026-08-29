@@ -85,7 +85,7 @@ func writeHTTPResponse(writer io.Writer, response *httpResponse, requestMethod s
 	if err := validateConnectionFields(response.Headers, "response headers"); err != nil {
 		return err
 	}
-	if strings.EqualFold(requestMethod, "CONNECT") || response.StatusCode == 101 || response.Headers.HasToken("Connection", "upgrade") || len(response.Headers.Values("Upgrade")) != 0 {
+	if successfulConnectResponse(requestMethod, response.StatusCode) || response.StatusCode == 101 || response.Headers.HasToken("Connection", "upgrade") || len(response.Headers.Values("Upgrade")) != 0 {
 		return newProtocolError(protocolUnsupportedFeature, "response writer", "tunnels and protocol upgrades are unsupported")
 	}
 	if err := validateTrailers(response.Trailers); err != nil {

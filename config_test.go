@@ -21,6 +21,7 @@ func TestConfigValidation(t *testing.T) {
 		{name: "zero timeout", mutate: func(c *Config) { c.IdleTimeoutMS = 0 }},
 		{name: "zero shutdown timeout", mutate: func(c *Config) { c.ShutdownMS = 0 }},
 		{name: "zero force-close timeout", mutate: func(c *Config) { c.ForceCloseMS = 0 }},
+		{name: "zero request limit", mutate: func(c *Config) { c.MaxRequests = 0 }},
 	}
 
 	for _, test := range tests {

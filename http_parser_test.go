@@ -249,6 +249,23 @@ func TestReadHTTPRequestCleanEOF(t *testing.T) {
 	}
 }
 
+func TestReadHTTPResponseAllowsRejectedCONNECTButNotTunnel(t *testing.T) {
+	rejected := "HTTP/1.1 400 Bad Request\r\nContent-Length: 3\r\nConnection: close\r\n\r\nbad"
+	response, err := readHTTPResponse(bufio.NewReader(strings.NewReader(rejected)), defaultHTTPLimits(), "CONNECT")
+	if err != nil {
+		t.Fatalf("rejected CONNECT response: %v", err)
+	}
+	if response.StatusCode != 400 || string(response.Body) != "bad" {
+		t.Fatalf("rejected CONNECT response = status %d body %q", response.StatusCode, response.Body)
+	}
+
+	tunnel := "HTTP/1.1 200 OK\r\n\r\n"
+	_, err = readHTTPResponse(bufio.NewReader(strings.NewReader(tunnel)), defaultHTTPLimits(), "CONNECT")
+	if protocolKind(err) != protocolUnsupportedFeature {
+		t.Fatalf("successful CONNECT error = %v, want %s", err, protocolUnsupportedFeature)
+	}
+}
+
 func TestReadHTTPRequestClassifiesTimeout(t *testing.T) {
 	_, err := readHTTPRequest(bufio.NewReader(timeoutReader{}), defaultHTTPLimits())
 	if got := protocolKind(err); got != protocolTimeout {

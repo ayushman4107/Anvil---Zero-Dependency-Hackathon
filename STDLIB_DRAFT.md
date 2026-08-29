@@ -14,8 +14,8 @@ The production HTTP server, parser, router, proxy, circuit breaker, metrics, SSE
 
 | Status | Normally installed | Standard-library implementation | Why it is meaningful |
 |---|---|---|---|
-| Mandatory | `github.com/valyala/fasthttp` or a framework HTTP engine | `net`, `bufio`, `io`, `bytes` plus Anvil's HTTP/1.1 codec | Implements TCP lifecycle, message framing, keep-alive, chunked coding, and strict errors directly |
-| Mandatory | `github.com/gorilla/mux` or `github.com/go-chi/chi` | `strings` plus a method-aware route tree | Static, parameter, and wildcard matching without regex or router dependency |
+| Implemented through Phase 3; recorded in `STDLIB.md` | `github.com/valyala/fasthttp` or a framework HTTP engine | `net`, `bufio`, `io`, `bytes` plus Anvil's HTTP/1.1 codec | Implements TCP lifecycle, message framing, keep-alive, chunked coding, and strict errors directly |
+| Implemented through Phase 3; recorded in `STDLIB.md` | `github.com/gorilla/mux` or `github.com/go-chi/chi` | `strings` plus a method-aware route tree | Static, parameter, and wildcard matching without regex or router dependency |
 | Mandatory / Package Killer | `github.com/sony/gobreaker` | `sync`, `sync/atomic`, `time` plus a closed/open/half-open state machine | Prevents traffic to failing upstreams and records explainable transitions |
 | Mandatory | `github.com/prometheus/client_golang` | `sync/atomic`, fixed histogram buckets, `runtime/metrics`, custom JSON/SSE output | Bounded metrics and latency percentiles without a collector library |
 | Mandatory | `github.com/r3labs/sse` or a WebSocket telemetry package | Custom chunked HTTP writer, `bufio`, bounded channels | Standards-compatible one-way live dashboard updates |

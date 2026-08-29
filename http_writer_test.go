@@ -117,6 +117,24 @@ func TestWriteHTTPResponseRejectsProtocolUpgrade(t *testing.T) {
 	}
 }
 
+func TestWriteHTTPResponseAllowsRejectedCONNECTButNotTunnel(t *testing.T) {
+	var output bytes.Buffer
+	rejected := textResponse(400, "bad")
+	rejected.Close = true
+	if err := writeHTTPResponse(&output, rejected, "CONNECT"); err != nil {
+		t.Fatalf("write rejected CONNECT response: %v", err)
+	}
+	if !strings.HasPrefix(output.String(), "HTTP/1.1 400 Bad Request\r\n") {
+		t.Fatalf("rejected CONNECT wire response = %q", output.String())
+	}
+
+	output.Reset()
+	tunnel := textResponse(200, "")
+	if err := writeHTTPResponse(&output, tunnel, "CONNECT"); protocolKind(err) != protocolUnsupportedFeature {
+		t.Fatalf("successful CONNECT error = %v, want %s", err, protocolUnsupportedFeature)
+	}
+}
+
 func TestWriteHTTPRequestFixedAndChunked(t *testing.T) {
 	tests := []struct {
 		name string
