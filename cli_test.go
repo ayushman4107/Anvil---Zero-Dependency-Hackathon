@@ -28,6 +28,9 @@ func TestRunHelp(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Phase 4 bounded proxy") {
 		t.Fatalf("help output has stale proxy status: %q", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "Phase 5 resilience core") {
+		t.Fatalf("help output has stale resilience status: %q", stdout.String())
+	}
 	if stderr.Len() != 0 {
 		t.Fatalf("help wrote to stderr: %q", stderr.String())
 	}

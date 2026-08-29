@@ -34,11 +34,23 @@ func (v *backendFlagValues) Set(value string) error {
 func runDevProxy(args []string, stdout, stderr io.Writer) int {
 	cfg := DefaultConfig()
 	proxyCfg := defaultProxyConfig()
+	resilienceCfg := defaultResilienceConfig()
+	healthCfg := defaultActiveHealthConfig()
 	var upstreams backendFlagValues
 	backendMaxInFlight := defaultBackendInFlight
+	backendMaxIdle := defaultBackendIdleConnections
+	backendIdleTimeoutMS := int(defaultBackendIdleTimeout / time.Millisecond)
+	selector := string(resilienceCfg.Selector)
+	healthChecks := false
+	healthPath := "/health"
 	dialTimeoutMS := int(proxyCfg.DialTimeout / time.Millisecond)
 	upstreamReadTimeoutMS := int(proxyCfg.ReadTimeout / time.Millisecond)
 	upstreamWriteTimeoutMS := int(proxyCfg.WriteTimeout / time.Millisecond)
+	retryTimeoutMS := int(proxyCfg.RetryTimeout / time.Millisecond)
+	circuitCooldownMS := int(resilienceCfg.CircuitCooldown / time.Millisecond)
+	passiveIntervalMS := int(resilienceCfg.PassiveInterval / time.Millisecond)
+	healthIntervalMS := int(healthCfg.Interval / time.Millisecond)
+	healthTimeoutMS := int(healthCfg.Timeout / time.Millisecond)
 
 	flags := flag.NewFlagSet("dev-proxy", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -50,11 +62,27 @@ func runDevProxy(args []string, stdout, stderr io.Writer) int {
 	flags.IntVar(&cfg.IdleTimeoutMS, "idle-timeout-ms", cfg.IdleTimeoutMS, "downstream idle timeout in milliseconds")
 	flags.IntVar(&cfg.ShutdownMS, "shutdown-timeout-ms", cfg.ShutdownMS, "graceful drain timeout in milliseconds")
 	flags.IntVar(&cfg.ForceCloseMS, "force-close-timeout-ms", cfg.ForceCloseMS, "wait after force-closing downstream connections in milliseconds")
-	flags.Var(&upstreams, "upstream", "backend in alias=host:port form; repeat for round robin")
+	flags.Var(&upstreams, "upstream", "backend in alias=host:port form; repeat to build a pool")
+	flags.StringVar(&selector, "selector", selector, "backend selector: round-robin or least-in-flight")
 	flags.IntVar(&backendMaxInFlight, "backend-max-in-flight", backendMaxInFlight, "maximum concurrent requests per backend")
+	flags.IntVar(&backendMaxIdle, "backend-max-idle", backendMaxIdle, "maximum reusable idle connections per backend")
+	flags.IntVar(&backendIdleTimeoutMS, "backend-idle-timeout-ms", backendIdleTimeoutMS, "maximum upstream idle connection age in milliseconds")
 	flags.IntVar(&dialTimeoutMS, "dial-timeout-ms", dialTimeoutMS, "upstream dial timeout in milliseconds")
 	flags.IntVar(&upstreamReadTimeoutMS, "upstream-read-timeout-ms", upstreamReadTimeoutMS, "upstream response timeout in milliseconds")
 	flags.IntVar(&upstreamWriteTimeoutMS, "upstream-write-timeout-ms", upstreamWriteTimeoutMS, "upstream request timeout in milliseconds")
+	flags.IntVar(&proxyCfg.MaxAttempts, "max-attempts", proxyCfg.MaxAttempts, "maximum total attempts for replayable GET and HEAD requests")
+	flags.IntVar(&retryTimeoutMS, "retry-timeout-ms", retryTimeoutMS, "maximum total safe-retry window in milliseconds")
+	flags.IntVar(&resilienceCfg.PassiveFailureThreshold, "circuit-failures", resilienceCfg.PassiveFailureThreshold, "passive failures within the interval before opening a circuit")
+	flags.IntVar(&passiveIntervalMS, "circuit-interval-ms", passiveIntervalMS, "passive failure counting interval in milliseconds")
+	flags.IntVar(&circuitCooldownMS, "circuit-cooldown-ms", circuitCooldownMS, "open-circuit cooldown before a bounded half-open probe")
+	flags.IntVar(&resilienceCfg.HalfOpenMaxRequests, "half-open-max", resilienceCfg.HalfOpenMaxRequests, "maximum concurrent half-open probes")
+	flags.IntVar(&resilienceCfg.HalfOpenSuccesses, "half-open-successes", resilienceCfg.HalfOpenSuccesses, "successful half-open probes required to close")
+	flags.BoolVar(&healthChecks, "health-checks", healthChecks, "enable active HTTP health checks")
+	flags.StringVar(&healthPath, "health-path", healthPath, "origin-form active health-check path")
+	flags.IntVar(&healthIntervalMS, "health-interval-ms", healthIntervalMS, "active health interval in milliseconds")
+	flags.IntVar(&healthTimeoutMS, "health-timeout-ms", healthTimeoutMS, "active health request timeout in milliseconds")
+	flags.IntVar(&resilienceCfg.ActiveFailureThreshold, "health-failures", resilienceCfg.ActiveFailureThreshold, "active failures required to mark unhealthy")
+	flags.IntVar(&resilienceCfg.ActiveSuccessThreshold, "health-successes", resilienceCfg.ActiveSuccessThreshold, "active successes required to recover")
 	flags.BoolVar(&proxyCfg.AddForwarded, "forwarded", proxyCfg.AddForwarded, "regenerate the RFC Forwarded field from the immediate peer")
 	flags.BoolVar(&proxyCfg.AddXForwarded, "x-forwarded", proxyCfg.AddXForwarded, "regenerate compatibility X-Forwarded fields")
 	flags.Usage = func() {
@@ -79,7 +107,7 @@ func runDevProxy(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%s dev-proxy: at least one --upstream is required\n", programName)
 		return exitUsage
 	}
-	if backendMaxInFlight <= 0 || dialTimeoutMS <= 0 || upstreamReadTimeoutMS <= 0 || upstreamWriteTimeoutMS <= 0 {
+	if backendMaxInFlight <= 0 || backendMaxIdle <= 0 || backendIdleTimeoutMS <= 0 || dialTimeoutMS <= 0 || upstreamReadTimeoutMS <= 0 || upstreamWriteTimeoutMS <= 0 || retryTimeoutMS <= 0 || passiveIntervalMS <= 0 || circuitCooldownMS <= 0 || healthIntervalMS <= 0 || healthTimeoutMS <= 0 {
 		fmt.Fprintf(stderr, "%s dev-proxy: backend limits and upstream timeouts must be greater than zero\n", programName)
 		return exitUsage
 	}
@@ -88,12 +116,18 @@ func runDevProxy(args []string, stdout, stderr io.Writer) int {
 	for _, value := range upstreams {
 		separator := strings.IndexByte(value, '=')
 		backends = append(backends, backendConfig{
-			Alias:       value[:separator],
-			Address:     value[separator+1:],
-			MaxInFlight: backendMaxInFlight,
+			Alias:              value[:separator],
+			Address:            value[separator+1:],
+			MaxInFlight:        backendMaxInFlight,
+			MaxIdleConnections: backendMaxIdle,
+			IdleTimeout:        time.Duration(backendIdleTimeoutMS) * time.Millisecond,
+			HealthPath:         healthPath,
 		})
 	}
-	pool, err := newBackendPool(backends)
+	resilienceCfg.Selector = selectorPolicy(selector)
+	resilienceCfg.PassiveInterval = time.Duration(passiveIntervalMS) * time.Millisecond
+	resilienceCfg.CircuitCooldown = time.Duration(circuitCooldownMS) * time.Millisecond
+	pool, err := newBackendPoolWithConfig(backends, resilienceCfg)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s dev-proxy: invalid upstream: %v\n", programName, err)
 		return exitUsage
@@ -101,6 +135,8 @@ func runDevProxy(args []string, stdout, stderr io.Writer) int {
 	proxyCfg.DialTimeout = time.Duration(dialTimeoutMS) * time.Millisecond
 	proxyCfg.ReadTimeout = time.Duration(upstreamReadTimeoutMS) * time.Millisecond
 	proxyCfg.WriteTimeout = time.Duration(upstreamWriteTimeoutMS) * time.Millisecond
+	proxyCfg.RetryTimeout = time.Duration(retryTimeoutMS) * time.Millisecond
+	defer pool.Close()
 	proxyHandler, err := newProxyHandler(pool, proxyCfg)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s dev-proxy: proxy configuration: %v\n", programName, err)
@@ -135,6 +171,21 @@ func runDevProxy(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "%s dev-proxy listening on %s with %d upstream(s)\n", programName, listener.Addr(), len(backends))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	var healthChecker *activeHealthChecker
+	if healthChecks {
+		healthCfg.Interval = time.Duration(healthIntervalMS) * time.Millisecond
+		healthCfg.Timeout = time.Duration(healthTimeoutMS) * time.Millisecond
+		healthChecker, err = newActiveHealthChecker(pool, proxyCfg, healthCfg)
+		if err != nil {
+			fmt.Fprintf(stderr, "%s dev-proxy: health configuration: %v\n", programName, err)
+			return exitUsage
+		}
+		if err := healthChecker.Start(ctx); err != nil {
+			fmt.Fprintf(stderr, "%s dev-proxy: health start: %v\n", programName, err)
+			return exitFailure
+		}
+		defer healthChecker.Stop()
+	}
 	if err := server.Serve(ctx); err != nil {
 		fmt.Fprintf(stderr, "%s dev-proxy: %v\n", programName, err)
 		return exitFailure

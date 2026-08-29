@@ -57,12 +57,12 @@ Commands:
   bench       Benchmark the Anvil data path (planned)
   dev-echo    Run the Phase 1 raw-TCP lifecycle proof
   dev-http    Run the Phase 3 raw HTTP server/router proof
-  dev-proxy   Run the Phase 4 bounded reverse-proxy proof
+  dev-proxy   Run the Phase 5 resilient reverse-proxy proof
   help        Show this help
 
 The current build includes the Phase 1 TCP lifecycle, Phase 2 strict HTTP/1.1
-codec, Phase 3 network-facing server/router, and Phase 4 bounded proxy
-transaction. Product commands fail explicitly until their acceptance gates complete.`)
+codec, Phase 3 network-facing server/router, Phase 4 bounded proxy transaction, and
+Phase 5 resilience core. Product commands fail explicitly until their acceptance gates complete.`)
 }
 
 func runDevHTTP(args []string, stdout, stderr io.Writer) int {

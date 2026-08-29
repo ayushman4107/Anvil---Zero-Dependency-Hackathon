@@ -129,40 +129,37 @@ Registration is single-threaded before serving. The resulting tree is immutable 
 A proxy transaction is the unit of request work:
 
 1. Resolve route and backend pool.
-2. Obtain a stable backend-state snapshot.
-3. Select an eligible backend.
-4. Reserve its in-flight counter.
-5. Dial with a timeout.
+2. Order candidates using round robin or least in-flight.
+3. Under the candidate's local state lock, verify active health and circuit permission and claim any half-open permit.
+4. Claim the non-blocking in-flight admission token.
+5. Acquire a non-expired idle connection or dial with a timeout.
 6. Sanitize and serialize the upstream request.
-7. Read and validate the upstream response.
-8. Decide whether a safe retry is possible.
-9. Serialize the downstream response.
-10. Update passive health, metrics, and ledger.
-11. Release the in-flight reservation exactly once.
+7. Read and validate the complete upstream response.
+8. Classify the passive outcome and release admission exactly once.
+9. Decide whether a distinct-backend safe retry is possible.
+10. Attach request ID and `Proxy-Status`, then return the buffered response to the downstream writer.
+11. The downstream writer validates, marks commitment, serializes, and flushes.
 
-The transaction records whether downstream headers or body bytes have been committed. Once committed, retry is prohibited.
+The transaction records whether downstream headers or body bytes have been committed. Once committed, retry is prohibited. The current buffered design means retry decisions occur before the handler returns; the commitment guard remains explicit so later streaming work cannot weaken this boundary.
 
 ### 3.6 Backend state and selectors
 
 Each backend has an immutable identity/configuration and mutable runtime state:
 
 ```text
-Alias, address, weight
-Health state
-Circuit state
-In-flight count
-Active connections
-Consecutive success/failure counters
-Latency EWMA
-Last transition and failure reason
-Half-open permits
+Immutable: alias, address, authority, limits, health path
+Active health eligibility and consecutive thresholds
+Circuit state, passive failure window, open timestamp
+Atomic in-flight count and bounded admission channel
+Half-open in-flight permits and success evidence
+Bounded idle connections and expiry
 ```
 
-Round robin uses an atomic sequence over an immutable eligible snapshot. Least-in-flight selects the eligible backend with the smallest active-request count, using stable ordering to break ties.
+Round robin uses an atomic sequence over the immutable backend slice and skips ineligible candidates. Least-in-flight stable-sorts the same rotated order by atomic active-request count, preserving a fair tie break. State permission and admission are rechecked during reservation, so a stale observation cannot bypass a concurrent transition.
 
 ### 3.7 Health and circuit engine
 
-Active probes and passive request outcomes feed one state owner per backend. Transitions are serialized under a small backend-local mutex. No global lock is held during network I/O.
+Active probes and passive request outcomes remain distinct inputs to one state owner per backend. Transitions are serialized under a small backend-local mutex. No global lock is held during network I/O, and transition callbacks run only after unlocking so observers may safely request a snapshot.
 
 The circuit state machine is:
 
@@ -175,7 +172,15 @@ CLOSED --trip--> OPEN --cooldown--> HALF_OPEN
 
 Health and circuit are related but not identical. A backend can be actively reachable while the circuit is open because recent application traffic failed. Selection requires both health eligibility and circuit permission.
 
-### 3.8 Decision ledger
+Active checks have independent failure and recovery thresholds and use the same raw TCP HTTP codec as proxy traffic. During an open circuit they continue measuring reachability; after cooldown, one may claim a bounded half-open permit and provide the success/failure evidence that closes or reopens the circuit. The checker owns one cancelable worker per backend and joins all workers on stop.
+
+### 3.8 Upstream reuse and retry
+
+Each backend owns a fixed-capacity idle stack. A connection is returned only after a complete persistent response has been parsed; close-delimited, explicitly closing, failed, timed-out, canceled, malformed, expired, surplus, and shutdown connections are closed. The pool has no sweeper goroutine: expiry is enforced on acquisition, and explicit pool close drains all idle sockets.
+
+Retry is a transaction policy, not a transport loop. Only buffered `GET` and `HEAD` requests are eligible, the downstream commitment flag must be false, attempts target distinct aliases, and both attempt count and total duration are bounded. Application statuses require an explicit retry set. If a buffered application response cannot fail over, Anvil returns that response instead of manufacturing a gateway failure.
+
+### 3.9 Decision ledger
 
 The ledger is a fixed-capacity ring containing sanitized metadata events:
 
@@ -194,7 +199,7 @@ It stores no request/response bodies, cookies, authorization values, or raw priv
 
 Event publication is non-blocking. The data plane updates atomic metrics and attempts to publish to subscriber queues. A full subscriber queue increments a drop counter rather than blocking traffic.
 
-### 3.9 Metrics
+### 3.10 Metrics
 
 Metrics combine:
 
@@ -205,7 +210,7 @@ Metrics combine:
 
 Percentiles are approximated from buckets and labelled as estimates. Metrics are in-memory only.
 
-### 3.10 Dashboard and SSE
+### 3.11 Dashboard and SSE
 
 The HTML, CSS, and JavaScript are stored as Go raw string constants if the Single File bonus remains viable. The dashboard uses same-origin SSE from the loopback admin listener.
 

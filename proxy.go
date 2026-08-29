@@ -10,8 +10,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -19,18 +17,12 @@ const (
 	defaultProxyDialTimeout   = 2 * time.Second
 	defaultProxyReadTimeout   = 10 * time.Second
 	defaultProxyWriteTimeout  = 10 * time.Second
-	defaultBackendInFlight    = 128
+	defaultProxyRetryTimeout  = 2 * time.Second
+	defaultProxyMaxAttempts   = 2
 	defaultViaName            = "anvil"
 	requestIDHeader           = "X-Anvil-Request-ID"
 	maxInformationalResponses = 8
 )
-
-type backendConfig struct {
-	Alias       string
-	Address     string
-	Authority   string
-	MaxInFlight int
-}
 
 func (c backendConfig) validate() error {
 	if !validToken([]byte(c.Alias)) {
@@ -54,74 +46,13 @@ func (c backendConfig) validate() error {
 	if c.MaxInFlight <= 0 {
 		return fmt.Errorf("backend %q maximum in-flight requests must be greater than zero", c.Alias)
 	}
+	if c.MaxIdleConnections < 0 || c.IdleTimeout <= 0 {
+		return fmt.Errorf("backend %q idle connection limit must not be negative and idle timeout must be positive", c.Alias)
+	}
+	if c.HealthPath == "" || c.HealthPath[0] != '/' || strings.ContainsAny(c.HealthPath, "\r\n#") {
+		return fmt.Errorf("backend %q health path must be a safe origin-form path", c.Alias)
+	}
 	return nil
-}
-
-type proxyBackend struct {
-	config    backendConfig
-	admission chan struct{}
-	inFlight  atomic.Int64
-}
-
-type backendReservation struct {
-	backend  *proxyBackend
-	released atomic.Bool
-}
-
-func (r *backendReservation) Release() {
-	if r == nil || r.backend == nil || !r.released.CompareAndSwap(false, true) {
-		return
-	}
-	r.backend.inFlight.Add(-1)
-	<-r.backend.admission
-}
-
-type backendPool struct {
-	backends []*proxyBackend
-	sequence atomic.Uint64
-}
-
-func newBackendPool(configs []backendConfig) (*backendPool, error) {
-	if len(configs) == 0 {
-		return nil, fmt.Errorf("backend pool requires at least one backend")
-	}
-	pool := &backendPool{backends: make([]*proxyBackend, 0, len(configs))}
-	aliases := make(map[string]struct{}, len(configs))
-	for _, config := range configs {
-		if config.Authority == "" {
-			config.Authority = config.Address
-		}
-		if err := config.validate(); err != nil {
-			return nil, err
-		}
-		aliasKey := strings.ToLower(config.Alias)
-		if _, exists := aliases[aliasKey]; exists {
-			return nil, fmt.Errorf("backend alias %q is duplicated", config.Alias)
-		}
-		aliases[aliasKey] = struct{}{}
-		pool.backends = append(pool.backends, &proxyBackend{
-			config:    config,
-			admission: make(chan struct{}, config.MaxInFlight),
-		})
-	}
-	return pool, nil
-}
-
-func (p *backendPool) reserveNext() (*backendReservation, error) {
-	if p == nil || len(p.backends) == 0 {
-		return nil, &proxyError{Kind: proxyNoBackend}
-	}
-	start := int((p.sequence.Add(1) - 1) % uint64(len(p.backends)))
-	for offset := range len(p.backends) {
-		backend := p.backends[(start+offset)%len(p.backends)]
-		select {
-		case backend.admission <- struct{}{}:
-			backend.inFlight.Add(1)
-			return &backendReservation{backend: backend}, nil
-		default:
-		}
-	}
-	return nil, &proxyError{Kind: proxyAdmissionRejected}
 }
 
 type requestIDGenerator func() (string, error)
@@ -134,6 +65,10 @@ type proxyConfig struct {
 	ViaName       string
 	AddForwarded  bool
 	AddXForwarded bool
+	MaxAttempts   int
+	RetryTimeout  time.Duration
+	RetryStatuses map[int]struct{}
+	Now           func() time.Time
 	NewRequestID  requestIDGenerator
 	DialContext   func(context.Context, string, string) (net.Conn, error)
 }
@@ -147,6 +82,9 @@ func defaultProxyConfig() proxyConfig {
 		ViaName:       defaultViaName,
 		AddForwarded:  true,
 		AddXForwarded: true,
+		MaxAttempts:   defaultProxyMaxAttempts,
+		RetryTimeout:  defaultProxyRetryTimeout,
+		Now:           time.Now,
 		NewRequestID:  randomRequestID,
 	}
 }
@@ -154,6 +92,9 @@ func defaultProxyConfig() proxyConfig {
 func (c *proxyConfig) setDefaults() {
 	if c.NewRequestID == nil {
 		c.NewRequestID = randomRequestID
+	}
+	if c.Now == nil {
+		c.Now = time.Now
 	}
 	if c.DialContext == nil {
 		dialer := &net.Dialer{Timeout: c.DialTimeout}
@@ -164,6 +105,9 @@ func (c *proxyConfig) setDefaults() {
 func (c proxyConfig) validate() error {
 	if c.DialTimeout <= 0 || c.ReadTimeout <= 0 || c.WriteTimeout <= 0 {
 		return fmt.Errorf("proxy dial, read, and write timeouts must be greater than zero")
+	}
+	if c.MaxAttempts <= 0 || c.RetryTimeout <= 0 {
+		return fmt.Errorf("proxy maximum attempts and retry timeout must be greater than zero")
 	}
 	if err := c.Limits.validate(); err != nil {
 		return err
@@ -177,20 +121,30 @@ func (c proxyConfig) validate() error {
 	if c.DialContext == nil {
 		return fmt.Errorf("dial function is required")
 	}
+	if c.Now == nil {
+		return fmt.Errorf("proxy clock is required")
+	}
+	for status := range c.RetryStatuses {
+		if status < 400 || status > 599 {
+			return fmt.Errorf("retry status %d must be between 400 and 599", status)
+		}
+	}
 	return nil
 }
 
 type proxyErrorKind string
 
 const (
-	proxyNoBackend         proxyErrorKind = "no_backend"
-	proxyAdmissionRejected proxyErrorKind = "admission_rejected"
-	proxyDialFailure       proxyErrorKind = "dial_failure"
-	proxyDialTimeout       proxyErrorKind = "dial_timeout"
-	proxyWriteFailure      proxyErrorKind = "write_failure"
-	proxyUpstreamTimeout   proxyErrorKind = "upstream_timeout"
-	proxyUpstreamProtocol  proxyErrorKind = "upstream_protocol"
-	proxyCanceled          proxyErrorKind = "canceled"
+	proxyNoBackend          proxyErrorKind = "no_backend"
+	proxyAdmissionRejected  proxyErrorKind = "admission_rejected"
+	proxyDialFailure        proxyErrorKind = "dial_failure"
+	proxyDialTimeout        proxyErrorKind = "dial_timeout"
+	proxyWriteFailure       proxyErrorKind = "write_failure"
+	proxyWriteTimeout       proxyErrorKind = "write_timeout"
+	proxyUpstreamTimeout    proxyErrorKind = "upstream_timeout"
+	proxyUpstreamProtocol   proxyErrorKind = "upstream_protocol"
+	proxyUpstreamIncomplete proxyErrorKind = "upstream_incomplete"
+	proxyCanceled           proxyErrorKind = "canceled"
 )
 
 type proxyError struct {
@@ -212,16 +166,6 @@ func (e *proxyError) Error() string {
 
 func (e *proxyError) Unwrap() error { return e.Err }
 
-type proxyAttempt struct {
-	RequestID        string
-	BackendAlias     string
-	StartedAt        time.Time
-	FinishedAt       time.Time
-	Failure          proxyErrorKind
-	DownstreamCommit *responseCommitState
-	releaseOnce      sync.Once
-}
-
 func newProxyHandler(pool *backendPool, config proxyConfig) (routeHandler, error) {
 	if pool == nil || len(pool.backends) == 0 {
 		return nil, fmt.Errorf("backend pool is required")
@@ -236,6 +180,7 @@ func newProxyHandler(pool *backendPool, config proxyConfig) (routeHandler, error
 }
 
 func executeProxyRequest(ctx context.Context, request *httpRequest, pool *backendPool, config proxyConfig) *httpResponse {
+	config.setDefaults()
 	requestID, err := config.NewRequestID()
 	if err != nil || !validRequestID(requestID) {
 		response := textResponse(500, "internal server error\n")
@@ -243,34 +188,75 @@ func executeProxyRequest(ctx context.Context, request *httpRequest, pool *backen
 		return response
 	}
 	commitState := &responseCommitState{}
-	reservation, err := pool.reserveNext()
-	if err != nil {
-		return proxyFailureResponse(err, requestID, commitState)
-	}
-	attempt := &proxyAttempt{
-		RequestID:        requestID,
-		BackendAlias:     reservation.backend.config.Alias,
-		StartedAt:        time.Now(),
-		DownstreamCommit: commitState,
-	}
-	defer attempt.releaseOnce.Do(reservation.Release)
-
-	response, err := executeProxyAttempt(ctx, request, reservation.backend, requestID, config)
-	attempt.FinishedAt = time.Now()
-	if err != nil {
-		var failure *proxyError
-		if errors.As(err, &failure) {
-			attempt.Failure = failure.Kind
+	deadline := config.Now().Add(config.RetryTimeout)
+	attempted := make(map[string]struct{}, config.MaxAttempts)
+	var lastFailure error
+	var lastRetryResponse *httpResponse
+	var lastRetryAlias string
+	for attemptNumber := 1; attemptNumber <= config.MaxAttempts; attemptNumber++ {
+		reservation, reserveErr := pool.reserveNextExcluding(attempted)
+		if reserveErr != nil {
+			if lastRetryResponse != nil {
+				return finalizeProxyResponse(lastRetryResponse, requestID, lastRetryAlias, commitState, config.ViaName)
+			}
+			if lastFailure != nil {
+				return proxyFailureResponse(lastFailure, requestID, commitState, config.ViaName)
+			}
+			return proxyFailureResponse(reserveErr, requestID, commitState, config.ViaName)
 		}
-		return proxyFailureResponse(err, requestID, commitState)
+		alias := reservation.backend.config.Alias
+		attempted[strings.ToLower(alias)] = struct{}{}
+		startedAt := config.Now()
+		remaining := deadline.Sub(startedAt)
+		attemptContext, cancelAttempt := context.WithTimeout(ctx, remaining)
+		response, attemptErr := executeProxyAttempt(attemptContext, request, reservation.backend, requestID, config)
+		cancelAttempt()
+		finishedAt := config.Now()
+		if attemptErr != nil {
+			reservation.Complete(passiveOutcomeForError(attemptErr), finishedAt)
+			lastFailure = attemptErr
+			if canRetryProxyRequest(request, attemptNumber, config.MaxAttempts, commitState, finishedAt, deadline) {
+				continue
+			}
+			return proxyFailureResponse(attemptErr, requestID, commitState, config.ViaName)
+		}
+
+		_, retryStatus := config.RetryStatuses[response.StatusCode]
+		outcome := passiveSuccess
+		if retryStatus || (pool.resilience.SlowLatencyThreshold > 0 && finishedAt.Sub(startedAt) >= pool.resilience.SlowLatencyThreshold) {
+			outcome = passiveFailure
+		}
+		reservation.Complete(outcome, finishedAt)
+		if retryStatus && canRetryProxyRequest(request, attemptNumber, config.MaxAttempts, commitState, finishedAt, deadline) {
+			lastRetryResponse = response
+			lastRetryAlias = alias
+			continue
+		}
+		return finalizeProxyResponse(response, requestID, alias, commitState, config.ViaName)
 	}
+	if lastRetryResponse != nil {
+		return finalizeProxyResponse(lastRetryResponse, requestID, lastRetryAlias, commitState, config.ViaName)
+	}
+	return proxyFailureResponse(lastFailure, requestID, commitState, config.ViaName)
+}
+
+func finalizeProxyResponse(response *httpResponse, requestID, alias string, commitState *responseCommitState, proxyName string) *httpResponse {
 	response.CommitState = commitState
 	response.Headers = replaceHeader(response.Headers, requestIDHeader, requestID)
+	response.Headers = append(response.Headers, headerField{Name: "Proxy-Status", Value: successfulProxyStatus(proxyName, alias, response.StatusCode)})
 	return response
 }
 
+func passiveOutcomeForError(err error) passiveOutcome {
+	var failure *proxyError
+	if errors.As(err, &failure) && failure.Kind == proxyCanceled {
+		return passiveNeutral
+	}
+	return passiveFailure
+}
+
 func executeProxyAttempt(ctx context.Context, request *httpRequest, backend *proxyBackend, requestID string, config proxyConfig) (*httpResponse, error) {
-	connection, err := config.DialContext(ctx, "tcp", backend.config.Address)
+	connection, _, err := backend.acquireConnection(ctx, config)
 	if err != nil {
 		kind := proxyDialFailure
 		if isTimeout(err) || errors.Is(err, context.DeadlineExceeded) {
@@ -278,9 +264,18 @@ func executeProxyAttempt(ctx context.Context, request *httpRequest, backend *pro
 		}
 		return nil, &proxyError{Kind: kind, BackendAlias: backend.config.Alias, Err: err}
 	}
-	defer connection.Close()
+	reusable := false
+	defer func() {
+		if !reusable {
+			_ = connection.Close()
+		}
+	}()
 	stopCancellation := context.AfterFunc(ctx, func() { _ = connection.Close() })
-	defer stopCancellation()
+	defer func() {
+		if !stopCancellation() {
+			_ = connection.Close()
+		}
+	}()
 
 	upstreamRequest := buildUpstreamRequest(request, backend.config.Authority, requestID, config)
 	if err := connection.SetWriteDeadline(time.Now().Add(config.WriteTimeout)); err != nil {
@@ -309,9 +304,21 @@ func executeProxyAttempt(ctx context.Context, request *httpRequest, backend *pro
 			}
 			continue
 		}
-		return sanitizeUpstreamResponse(response, config.ViaName), nil
+		canReuse := response.KeepAlive && response.BodyMode != bodyModeCloseDelimited
+		sanitized := sanitizeUpstreamResponse(response, config.ViaName)
+		if canReuse {
+			reusable = backend.recycleConnection(connection, config.Now())
+		}
+		return sanitized, nil
 	}
 	return nil, &proxyError{Kind: proxyUpstreamProtocol, BackendAlias: backend.config.Alias, Err: fmt.Errorf("missing final response")}
+}
+
+func canRetryProxyRequest(request *httpRequest, attempt, maxAttempts int, commitState *responseCommitState, now, deadline time.Time) bool {
+	if request == nil || attempt >= maxAttempts || commitState.Committed() || !now.Before(deadline) {
+		return false
+	}
+	return request.Method == "GET" || request.Method == "HEAD"
 }
 
 func buildUpstreamRequest(request *httpRequest, authority, requestID string, config proxyConfig) *httpRequest {
@@ -323,7 +330,6 @@ func buildUpstreamRequest(request *httpRequest, authority, requestID string, con
 	headers := filterHeaderFields(request.Headers, remove)
 	headers = append(headers,
 		headerField{Name: "Host", Value: authority},
-		headerField{Name: "Connection", Value: "close"},
 		headerField{Name: "Via", Value: "1.1 " + config.ViaName},
 		headerField{Name: requestIDHeader, Value: requestID},
 	)
@@ -351,7 +357,7 @@ func buildUpstreamRequest(request *httpRequest, authority, requestID string, con
 		Trailers:  filterHeaderFields(request.Trailers, remove),
 		Body:      request.Body,
 		BodyMode:  mode,
-		KeepAlive: false,
+		KeepAlive: true,
 	}
 }
 
@@ -453,7 +459,7 @@ func validRequestID(value string) bool {
 func classifyProxyWriteError(alias string, err error) error {
 	kind := proxyWriteFailure
 	if isTimeout(err) {
-		kind = proxyUpstreamTimeout
+		kind = proxyWriteTimeout
 	}
 	return &proxyError{Kind: kind, BackendAlias: alias, Err: err}
 }
@@ -465,6 +471,9 @@ func classifyProxyReadError(ctx context.Context, alias string, err error) error 
 	if protocolKind(err) == protocolTimeout || isTimeout(err) {
 		return &proxyError{Kind: proxyUpstreamTimeout, BackendAlias: alias, Err: err}
 	}
+	if protocolKind(err) == protocolIncompleteMessage {
+		return &proxyError{Kind: proxyUpstreamIncomplete, BackendAlias: alias, Err: err}
+	}
 	return &proxyError{Kind: proxyUpstreamProtocol, BackendAlias: alias, Err: err}
 }
 
@@ -473,20 +482,64 @@ func isTimeout(err error) bool {
 	return errors.As(err, &networkError) && networkError.Timeout()
 }
 
-func proxyFailureResponse(err error, requestID string, commitState *responseCommitState) *httpResponse {
+func proxyFailureResponse(err error, requestID string, commitState *responseCommitState, proxyName ...string) *httpResponse {
 	status := 502
 	message := "bad gateway\n"
+	viaName := defaultViaName
+	if len(proxyName) != 0 && proxyName[0] != "" {
+		viaName = proxyName[0]
+	}
 	var failure *proxyError
 	if errors.As(err, &failure) {
 		switch failure.Kind {
 		case proxyNoBackend, proxyAdmissionRejected, proxyCanceled:
 			status, message = 503, "service unavailable\n"
-		case proxyDialTimeout, proxyUpstreamTimeout:
+		case proxyDialTimeout, proxyWriteTimeout, proxyUpstreamTimeout:
 			status, message = 504, "gateway timeout\n"
 		}
 	}
 	response := textResponse(status, message)
 	response.Headers = append(response.Headers, headerField{Name: requestIDHeader, Value: requestID})
+	response.Headers = append(response.Headers, headerField{Name: "Proxy-Status", Value: failureProxyStatus(viaName, failure)})
 	response.CommitState = commitState
 	return response
+}
+
+func successfulProxyStatus(proxyName, alias string, status int) string {
+	return fmt.Sprintf("%s; received-status=%d; next-hop=%s", proxyName, status, alias)
+}
+
+func failureProxyStatus(proxyName string, failure *proxyError) string {
+	errorToken := "proxy_internal_error"
+	alias := ""
+	if failure != nil {
+		alias = failure.BackendAlias
+		switch failure.Kind {
+		case proxyNoBackend:
+			errorToken = "destination_unavailable"
+		case proxyAdmissionRejected:
+			errorToken = "connection_limit_reached"
+		case proxyDialFailure:
+			errorToken = "connection_refused"
+		case proxyDialTimeout:
+			errorToken = "connection_timeout"
+		case proxyWriteFailure:
+			errorToken = "connection_terminated"
+		case proxyWriteTimeout:
+			errorToken = "connection_write_timeout"
+		case proxyUpstreamTimeout:
+			errorToken = "connection_read_timeout"
+		case proxyUpstreamIncomplete:
+			errorToken = "http_response_incomplete"
+		case proxyUpstreamProtocol:
+			errorToken = "http_protocol_error"
+		case proxyCanceled:
+			errorToken = "proxy_internal_response"
+		}
+	}
+	value := proxyName + "; error=" + errorToken
+	if alias != "" {
+		value += "; next-hop=" + alias
+	}
+	return value
 }

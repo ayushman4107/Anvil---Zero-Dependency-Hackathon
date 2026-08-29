@@ -2,7 +2,7 @@
 
 Anvil is an explainable reverse proxy and resilience-testing lab built for Track C of the Zero Dependency Hackathon. Its core promise is to make every routing, failover, circuit-breaker, and recovery decision observable and reproducible from one offline-capable binary.
 
-> Phase 4 status: the raw-TCP lifecycle, strict HTTP/1.1 codec, server/router, and bounded single-attempt reverse-proxy transaction are implemented and tested. Health-driven failover, retries, circuit breaking, and product telemetry are intentionally not claimed yet.
+> Phase 5 status: the raw-TCP HTTP engine now drives a bounded reverse proxy with round-robin or least-in-flight selection, active/passive health, closed/open/half-open circuits, safe pre-commit retries, upstream connection reuse, and RFC 9209 `Proxy-Status`. Product telemetry and experiments remain later gates.
 
 ## Requirements
 
@@ -64,15 +64,17 @@ anvil dev-http --listen 127.0.0.1:8080
 
 It exposes `GET /health`, `GET /hello/:name`, and `POST /echo` through Anvil's own parser, router, and serializer. It is deliberately labelled as a development proof rather than the unfinished proxy product.
 
-The Phase 4 proxy proof accepts one or more repeatable upstreams:
+The Phase 5 proxy proof accepts one or more repeatable upstreams:
 
 ```sh
 anvil dev-proxy --listen 127.0.0.1:8080 \
   --upstream api-a=127.0.0.1:9001 \
-  --upstream api-b=127.0.0.1:9002
+  --upstream api-b=127.0.0.1:9002 \
+  --selector least-in-flight \
+  --health-checks
 ```
 
-All valid methods and origin-form paths are forwarded. Upstreams rotate in basic round-robin order, each has a hard in-flight bound, and each Phase 4 transaction makes exactly one attempt.
+All valid methods and origin-form paths are forwarded. Round robin is the default; `--selector least-in-flight` deprioritizes busy eligible nodes. `GET` and `HEAD` may fail over before downstream commitment within the attempt/time bounds, while unsafe methods are never retried automatically. Active checks are opt-in for arbitrary development backends and use `GET /health` by default.
 
 ## Phase 1 TCP foundation
 
@@ -138,7 +140,22 @@ The first complete client-to-upstream vertical slice now provides:
 - Conservative downstream commitment state that becomes immutable before encoded response bytes enter the downstream writer.
 - Real-socket tests using two Anvil-engine fixtures, a standard-library client oracle, malformed raw fixtures, one-attempt proof, and concurrent admission stress.
 
-Phase 4 intentionally opens a fresh upstream connection per request and sends `Connection: close`. Connection reuse will be introduced only with the lifecycle and health ownership required to make pooling safe.
+## Phase 5 resilience core
+
+The Phase 4 transaction boundary is now governed by a backend-local resilience engine:
+
+- Immutable backend identity/configuration is separated from mutex-protected health/circuit state, atomic in-flight counts, bounded admission, and an independently locked idle-connection pool.
+- Stable round-robin and least-in-flight selectors consider both active health and circuit permission. A health-ineligible or open backend is never selected.
+- Active checks use Anvil's own TCP client, request writer, and response parser. Failure and recovery thresholds prevent one noisy probe from flapping eligibility, and checker cancellation joins every worker.
+- Passive refusal, timeout, incomplete/protocol response, configured application status, and optional slow-latency signals feed a rolling failure window.
+- Circuits transition `closed -> open -> half-open -> closed/open`. Cooldown only permits a bounded probe; elapsed time alone never restores service. Transition callbacks run after the backend lock is released.
+- Only fully buffered `GET` and `HEAD` requests can be retried, only before downstream commitment, only to a distinct eligible backend, and only within configured attempt and total-time bounds. `POST` is never retried automatically.
+- Application statuses are not retried unless explicitly configured. If no alternate backend is available, the buffered upstream response is returned rather than replaced with a fabricated gateway error.
+- Per-backend keep-alive pools have fixed idle capacities and expiry. Only completely parsed persistent responses are reusable; close-delimited, `Connection: close`, failed, timed-out, canceled, malformed, and surplus connections are discarded.
+- Every upstream response carries an Anvil `Proxy-Status` member. Generated failures use RFC 9209 error tokens, while `next-hop` contains only the configured public backend alias—not its private address.
+- Snapshots expose coherent health/circuit/counter state for the next phase's ledger and dashboard without making observability own data-plane state.
+
+Deterministic virtual-time state-machine tests cover opening, exclusion, bounded half-open admission, recovery, cooldown restart, callback re-entry, active health thresholds, safe retry, unsafe-method refusal, reuse/discard, and concurrent state access. The complete suite is race-detector compatible with the documented MinGW-w64 toolchain on Windows.
 
 ## Planned differentiator
 
@@ -161,11 +178,11 @@ The mandatory design, protocol boundaries, test strategy, demo, and execution ga
 - The runtime does not shell out to tools or depend on network services.
 - The raw server and proxy core do not use `net/http`; tests may use it only as an independent compatibility oracle.
 
-See `STDLIB.md` for substitutions actually implemented so far. Planned substitutions remain in `STDLIB_DRAFT.md` and do not count as shipped work.
+See `STDLIB.md` for substitutions actually implemented through Phase 5. Planned substitutions remain in `STDLIB_DRAFT.md` and do not count as shipped work.
 
 ## Current limitations
 
-Phase 4 is a working bounded reverse-proxy slice, but the product `proxy` command remains gated until JSON route/pool configuration and the resilience core exist. There is no health-driven eligibility, automatic retry, least-in-flight policy, upstream connection pool, circuit breaker, `Proxy-Status`, decision ledger, dashboard, experiment runner, or benchmark engine yet.
+Phase 5 is a working resilient development proxy, but the product `proxy` command remains gated until JSON route/pool configuration and the administration plane exist. There is no causal event ledger, metrics/histograms, SSE dashboard, deterministic experiment runner, resilience receipt, or benchmark engine yet. Retries remain intentionally buffered and non-streaming; active health checks are opt-in on `dev-proxy` so arbitrary backends without `/health` do not become unexpectedly ineligible.
 
 ## License
 

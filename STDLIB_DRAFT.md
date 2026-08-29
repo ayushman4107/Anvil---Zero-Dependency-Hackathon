@@ -14,19 +14,19 @@ The production HTTP server, parser, router, proxy, circuit breaker, metrics, SSE
 
 | Status | Normally installed | Standard-library implementation | Why it is meaningful |
 |---|---|---|---|
-| Implemented through Phase 4; recorded in `STDLIB.md` | `github.com/valyala/fasthttp` or a framework HTTP engine | `net`, `bufio`, `io`, `bytes` plus Anvil's HTTP/1.1 codec | Implements TCP lifecycle, message framing, keep-alive, chunked coding, and strict errors directly |
+| Implemented through Phase 5; recorded in `STDLIB.md` | `github.com/valyala/fasthttp` or a framework HTTP engine | `net`, `bufio`, `io`, `bytes` plus Anvil's HTTP/1.1 codec | Implements TCP lifecycle, message framing, keep-alive, chunked coding, and strict errors directly |
 | Implemented through Phase 3; recorded in `STDLIB.md` | `github.com/gorilla/mux` or `github.com/go-chi/chi` | `strings` plus a method-aware route tree | Static, parameter, and wildcard matching without regex or router dependency |
-| Mandatory / Package Killer | `github.com/sony/gobreaker` | `sync`, `sync/atomic`, `time` plus a closed/open/half-open state machine | Prevents traffic to failing upstreams and records explainable transitions |
+| Implemented in Phase 5 / Package Killer; recorded in `STDLIB.md` | `github.com/sony/gobreaker` | `sync`, `sync/atomic`, `time` plus a closed/open/half-open state machine | Prevents traffic to failing upstreams and exposes explainable transition callbacks |
 | Mandatory | `github.com/prometheus/client_golang` | `sync/atomic`, fixed histogram buckets, `runtime/metrics`, custom JSON/SSE output | Bounded metrics and latency percentiles without a collector library |
 | Mandatory | `github.com/r3labs/sse` or a WebSocket telemetry package | Custom chunked HTTP writer, `bufio`, bounded channels | Standards-compatible one-way live dashboard updates |
 | Mandatory | `go.uber.org/zap`, `github.com/rs/zerolog`, or `github.com/sirupsen/logrus` | `log/slog` | Structured logs with levels and attributes |
-| Implemented through Phase 4; recorded in `STDLIB.md` | `github.com/spf13/cobra` | `flag`, `os.Args` | Explicit subcommands, options, help, and exit behavior |
+| Implemented through Phase 5; recorded in `STDLIB.md` | `github.com/spf13/cobra` | `flag`, `os.Args` | Explicit subcommands, resilience options, help, and exit behavior |
 | Mandatory | `github.com/spf13/viper` | `encoding/json/v2`, `os`, `flag` | JSON configuration plus CLI overrides without YAML/TOML dependencies |
 | Partially implemented through Phase 4; recorded in `STDLIB.md` | `github.com/google/uuid` | `crypto/rand` plus `encoding/hex` | Dependency-free 128-bit request IDs; experiment identifiers remain a later scope |
 | Mandatory | `github.com/json-iterator/go` | `encoding/json/v2` after local API verification | Configuration, events, metrics, and receipts |
-| Mandatory | `github.com/cenkalti/backoff` | `time` plus bounded retry/backoff logic | Explicit retry limits and timing |
-| Mandatory | `github.com/hashicorp/go-retryablehttp` | `net`, custom serializer/parser, method-aware retry policy | Safe retries only before response commitment and only for replayable requests |
-| Mandatory | `github.com/stretchr/testify` | `testing`, `testing/synctest` | Table tests, assertions through helpers, deterministic time/concurrency tests |
+| Implemented in Phase 5; recorded in `STDLIB.md` | `github.com/cenkalti/backoff` | `time` plus bounded retry logic | Explicit attempt and total-time limits without hidden retry behavior |
+| Implemented in Phase 5; recorded in `STDLIB.md` | `github.com/hashicorp/go-retryablehttp` | `net`, custom serializer/parser, method-aware retry policy | Safe retries only before response commitment and only for replayable requests |
+| Implemented through Phase 5; recorded in `STDLIB.md` | `github.com/stretchr/testify` | `testing`, explicit virtual clock seam | Table tests, helpers, deterministic state transitions, and native race detection |
 | Conditional | `golang.org/x/time/rate` or `github.com/juju/ratelimit` | `sync`, `time`, custom token bucket | Count only if per-client rate limiting ships |
 | Conditional | compression middleware | `compress/gzip`, `compress/flate` | Count only if correct proxy transformation ships |
 | Conditional | TLS wrapper | `crypto/tls`, `crypto/x509` | Count only if TLS termination/upstream support ships |

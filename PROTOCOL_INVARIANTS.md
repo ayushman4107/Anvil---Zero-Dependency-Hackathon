@@ -114,6 +114,8 @@ Framing is determined once, before body consumption.
 4. Retry count and total retry time are bounded.
 5. Each attempt receives a separate event and backend outcome.
 6. An upstream application status is not retried unless an explicit policy declares that status retryable.
+7. A retry targets a distinct backend alias; exhaustion never loops back to the same failed node within one transaction.
+8. If an application response selected for retry cannot reach another eligible backend, the original complete response is returned.
 
 ## 11. Health and circuit invariants
 
@@ -125,8 +127,18 @@ Framing is determined once, before body consumption.
 6. Recovery requires the configured success evidence; time passing alone does not mark a backend healthy.
 7. Every transition has one ledger event containing previous state, new state, backend alias, and reason.
 8. Selection reads a coherent state snapshot and never holds a state lock during network I/O.
+9. Active health failure/recovery thresholds change health eligibility; they do not silently rewrite passive counters.
+10. Transition callbacks execute after the backend state lock is released.
 
-## 12. Concurrency and resource invariants
+## 12. Upstream connection-pool invariants
+
+1. Idle capacity and idle lifetime are finite per backend.
+2. A connection is reusable only after Anvil has parsed one complete persistent HTTP response with unambiguous framing.
+3. Close-delimited, `Connection: close`, expired, failed, timed-out, canceled, malformed, surplus, and shutdown connections are closed rather than pooled.
+4. A checked-out connection has one transaction owner. Idle-pool locks are never held during network I/O.
+5. Pool shutdown prevents later recycling and closes every currently idle connection.
+
+## 13. Concurrency and resource invariants
 
 1. One slow client cannot prevent acceptance or processing of unrelated admitted clients.
 2. Connection, body, header, event, subscriber, benchmark-worker, and fixture counts are bounded.
@@ -136,7 +148,7 @@ Framing is determined once, before body consumption.
 6. Graceful shutdown stops acceptance, cancels background work, allows bounded drain time, and then closes remaining connections.
 7. Goroutines started by a component have an explicit cancellation and join path.
 
-## 13. Administration and telemetry invariants
+## 14. Administration and telemetry invariants
 
 1. The administration listener binds to loopback unless explicitly configured otherwise.
 2. Experiment mutation endpoints are not exposed on the public proxy listener.
@@ -146,7 +158,7 @@ Framing is determined once, before body consumption.
 6. Percentiles are labelled as histogram estimates.
 7. SSE uses UTF-8 `text/event-stream`, event IDs, bounded queues, and heartbeat comments.
 
-## 14. Error mapping invariants
+## 15. Error mapping invariants
 
 | Condition | Downstream result before commit |
 |---|---|
@@ -163,7 +175,23 @@ Framing is determined once, before body consumption.
 
 The chosen mapping must remain consistent across status, `Proxy-Status`, ledger reason, metrics, tests, and documentation.
 
-## 15. Unsupported-feature behavior
+Phase 5 emits the following RFC 9209 error types. `next-hop` is omitted when no backend was selected and otherwise contains only the validated backend alias.
+
+| Anvil condition | `Proxy-Status` error |
+|---|---|
+| No healthy/circuit-eligible backend | `destination_unavailable` |
+| Backend admission exhausted | `connection_limit_reached` |
+| Loopback/backend connection refused | `connection_refused` |
+| Dial timeout | `connection_timeout` |
+| Write timeout | `connection_write_timeout` |
+| Connection terminates during write | `connection_terminated` |
+| Response read timeout | `connection_read_timeout` |
+| Incomplete framed response | `http_response_incomplete` |
+| Other invalid upstream HTTP | `http_protocol_error` |
+
+A forwarded response uses `received-status=<code>` plus the backend alias. Existing upstream `Proxy-Status` members are preserved before Anvil appends its own member.
+
+## 16. Unsupported-feature behavior
 
 - HTTP/2 preface: reject safely; do not parse as HTTP/1.1.
 - `Upgrade`/WebSocket: reject explicitly and close.

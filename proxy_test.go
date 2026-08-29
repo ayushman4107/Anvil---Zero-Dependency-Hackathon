@@ -48,8 +48,8 @@ func TestBuildUpstreamRequestSanitizesAndReconstructs(t *testing.T) {
 	if host, _ := upstream.Headers.First("Host"); host != "backend.internal:9000" {
 		t.Fatalf("Host = %q", host)
 	}
-	if connection, _ := upstream.Headers.First("Connection"); connection != "close" {
-		t.Fatalf("Connection = %q", connection)
+	if connection, exists := upstream.Headers.First("Connection"); exists {
+		t.Fatalf("unexpected Connection = %q", connection)
 	}
 	if values := upstream.Headers.Values("Via"); fmt.Sprint(values) != "[1.0 prior 1.1 anvil]" {
 		t.Fatalf("Via = %v", values)
@@ -273,7 +273,7 @@ func TestProxyChunkedRequestResponseAndTrailers(t *testing.T) {
 	}
 }
 
-func TestProxyFailureMappingsAndNoRetry(t *testing.T) {
+func TestProxyFailureMappingsAndSafeRetry(t *testing.T) {
 	refusedAddress := unusedTCPAddress(t)
 	config := defaultProxyConfig()
 	config.NewRequestID = func() (string, error) { return "failure-request-id", nil }
@@ -332,8 +332,8 @@ func TestProxyFailureMappingsAndNoRetry(t *testing.T) {
 	response = rawHTTPExchange(t, proxyAddress, "GET / HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n", "GET")
 	stopProxy()
 	stopHealthy()
-	if response.StatusCode != 502 || healthyDials.Load() != 0 {
-		t.Fatalf("no-retry result = status %d healthy attempts %d", response.StatusCode, healthyDials.Load())
+	if response.StatusCode != 200 || healthyDials.Load() != 1 || string(response.Body) != "ok" {
+		t.Fatalf("safe-retry result = status %d body %q healthy attempts %d", response.StatusCode, response.Body, healthyDials.Load())
 	}
 }
 
@@ -357,16 +357,19 @@ func TestProxyBodyLimitRejectsBeforeDial(t *testing.T) {
 
 func TestProxyFailureResponseMappingsDoNotLeakBackendAddress(t *testing.T) {
 	tests := []struct {
-		kind   proxyErrorKind
-		status int
+		kind       proxyErrorKind
+		status     int
+		errorToken string
 	}{
-		{kind: proxyAdmissionRejected, status: 503},
-		{kind: proxyCanceled, status: 503},
-		{kind: proxyDialFailure, status: 502},
-		{kind: proxyWriteFailure, status: 502},
-		{kind: proxyUpstreamProtocol, status: 502},
-		{kind: proxyDialTimeout, status: 504},
-		{kind: proxyUpstreamTimeout, status: 504},
+		{kind: proxyAdmissionRejected, status: 503, errorToken: "connection_limit_reached"},
+		{kind: proxyCanceled, status: 503, errorToken: "proxy_internal_response"},
+		{kind: proxyDialFailure, status: 502, errorToken: "connection_refused"},
+		{kind: proxyWriteFailure, status: 502, errorToken: "connection_terminated"},
+		{kind: proxyUpstreamProtocol, status: 502, errorToken: "http_protocol_error"},
+		{kind: proxyUpstreamIncomplete, status: 502, errorToken: "http_response_incomplete"},
+		{kind: proxyDialTimeout, status: 504, errorToken: "connection_timeout"},
+		{kind: proxyWriteTimeout, status: 504, errorToken: "connection_write_timeout"},
+		{kind: proxyUpstreamTimeout, status: 504, errorToken: "connection_read_timeout"},
 	}
 	for _, test := range tests {
 		t.Run(string(test.kind), func(t *testing.T) {
@@ -377,6 +380,10 @@ func TestProxyFailureResponseMappingsDoNotLeakBackendAddress(t *testing.T) {
 			}
 			if strings.Contains(string(response.Body), "127.0.0.1") || strings.Contains(string(response.Body), "public-alias") {
 				t.Fatalf("failure body leaked backend detail: %q", response.Body)
+			}
+			proxyStatus := responseHeader(response, "Proxy-Status")
+			if proxyStatus != "anvil; error="+test.errorToken+"; next-hop=public-alias" || strings.Contains(proxyStatus, "127.0.0.1") {
+				t.Fatalf("Proxy-Status = %q", proxyStatus)
 			}
 		})
 	}
@@ -411,6 +418,22 @@ func TestBackendAndProxyConfigurationValidation(t *testing.T) {
 	config.ViaName = "bad name"
 	if _, err := newProxyHandler(pool, config); err == nil {
 		t.Fatal("invalid Via pseudonym was accepted")
+	}
+	config = defaultProxyConfig()
+	config.RetryStatuses = map[int]struct{}{200: {}}
+	if _, err := newProxyHandler(pool, config); err == nil {
+		t.Fatal("invalid retry status was accepted")
+	}
+	policy := defaultResilienceConfig()
+	policy.Selector = "random"
+	if _, err := newBackendPoolWithConfig([]backendConfig{{Alias: "valid", Address: "127.0.0.1:80", MaxInFlight: 1}}, policy); err == nil {
+		t.Fatal("invalid selector was accepted")
+	}
+	policy = defaultResilienceConfig()
+	policy.HalfOpenMaxRequests = 1
+	policy.HalfOpenSuccesses = 2
+	if _, err := newBackendPoolWithConfig([]backendConfig{{Alias: "valid", Address: "127.0.0.1:80", MaxInFlight: 1}}, policy); err == nil {
+		t.Fatal("impossible half-open success threshold was accepted")
 	}
 }
 

@@ -96,6 +96,10 @@ No third-party test framework is permitted or needed.
 | PROXY-014 | P0 | Failure after downstream commit | No retry; clean termination |
 | PROXY-015 | P1 | Unknown end-to-end field | Preserved |
 | PROXY-016 | P1 | Body cap | `413` before upstream attempt |
+| PROXY-017 | P0 | Persistent upstream, sequential requests | One connection safely reused |
+| PROXY-018 | P0 | Upstream `Connection: close` | Socket discarded; next request redials |
+| PROXY-019 | P1 | Configured application status | GET retries only when policy opts in |
+| PROXY-020 | P0 | Proxy-Status privacy | RFC error token plus alias; no private address |
 
 ## Balancing, health, and circuit breaker
 
@@ -114,6 +118,9 @@ No third-party test framework is permitted or needed.
 | RES-011 | P0 | Concurrent failures | Race-free counters and coherent transition |
 | RES-012 | P1 | Virtual-time state tests | No real sleeps |
 | RES-013 | P1 | All transaction exit paths | In-flight count returns to baseline |
+| RES-014 | P0 | Active recovery threshold | Ineligible backend restored only after required successes |
+| RES-015 | P0 | Active half-open probe | Success closes; failure reopens |
+| RES-016 | P1 | Transition callback re-entry | Snapshot succeeds without deadlock |
 
 ## Concurrency and lifecycle
 
