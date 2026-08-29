@@ -24,6 +24,7 @@ const (
 	eventRequestCompleted  eventType = "request_completed"
 	eventCircuitTransition eventType = "circuit_transition"
 	eventHealthTransition  eventType = "health_transition"
+	eventFixtureTransition eventType = "fixture_transition"
 )
 
 type decisionEvent struct {

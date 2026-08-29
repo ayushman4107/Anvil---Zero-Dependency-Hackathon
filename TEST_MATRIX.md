@@ -164,11 +164,16 @@ No third-party test framework is permitted or needed.
 | EXP-004 | P0 | Recovery | Half-open probe and return to rotation |
 | EXP-005 | P0 | Assertion pass/fail | Correct process exit status |
 | EXP-006 | P1 | Same seed | Same schedule and fault sequence |
+| EXP-007 | P0 | Strict scenario JSON | Unknown fields, trailing values, invalid references, and bounds rejected |
+| EXP-008 | P0 | Three consecutive offline runs | Each receipt passes and ledger/benchmark counts reconcile |
+| EXP-009 | P0 | Fixture mode matrix | Healthy, delayed, failure, truncated, unavailable, and recovered behavior observed through Anvil codec |
 | BENCH-001 | P0 | Bounded workers | Configured concurrency never exceeded |
 | BENCH-002 | P0 | Known response counts | Status and error totals reconcile |
 | BENCH-003 | P0 | Cancellation | Workers and connections terminate |
 | BENCH-004 | P1 | ANSI disabled | Stable plain-text output |
 | BENCH-005 | P1 | JSON output | Valid schema and receipt integration |
+| BENCH-006 | P0 | Connection ownership/reuse | New plus reused accounting is coherent; one worker owns each socket |
+| BENCH-007 | P0 | Parent cancellation | In-progress I/O closes and workers join within the test bound |
 
 ## Compatibility, compliance, and builds
 

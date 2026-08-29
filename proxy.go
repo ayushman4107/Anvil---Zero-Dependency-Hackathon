@@ -197,6 +197,7 @@ func executeProxyRequest(ctx context.Context, request *httpRequest, pool *backen
 		return response
 	}
 	requestStartedAt := config.Now()
+	finalBackendAlias := ""
 	if config.Observability != nil {
 		config.Observability.metrics.beginRequest(len(request.Body))
 		config.Observability.publish(decisionEvent{Type: eventRequestStarted, RequestID: requestID, RouteAlias: config.RouteAlias})
@@ -216,6 +217,7 @@ func executeProxyRequest(ctx context.Context, request *httpRequest, pool *backen
 				Type:           eventRequestCompleted,
 				RequestID:      requestID,
 				RouteAlias:     config.RouteAlias,
+				BackendAlias:   finalBackendAlias,
 				Status:         status,
 				DurationMicros: max(duration.Microseconds(), 0),
 			})
@@ -232,6 +234,7 @@ func executeProxyRequest(ctx context.Context, request *httpRequest, pool *backen
 		if reserveErr != nil {
 			recordProxyAttemptFailure(config.Observability, requestID, config.RouteAlias, "", attemptNumber, reserveErr, 0)
 			if lastRetryResponse != nil {
+				finalBackendAlias = lastRetryAlias
 				return finalizeProxyResponse(lastRetryResponse, requestID, lastRetryAlias, commitState, config.ViaName)
 			}
 			if lastFailure != nil {
@@ -277,9 +280,11 @@ func executeProxyRequest(ctx context.Context, request *httpRequest, pool *backen
 			lastRetryAlias = alias
 			continue
 		}
+		finalBackendAlias = alias
 		return finalizeProxyResponse(response, requestID, alias, commitState, config.ViaName)
 	}
 	if lastRetryResponse != nil {
+		finalBackendAlias = lastRetryAlias
 		return finalizeProxyResponse(lastRetryResponse, requestID, lastRetryAlias, commitState, config.ViaName)
 	}
 	return proxyFailureResponse(lastFailure, requestID, commitState, config.ViaName)

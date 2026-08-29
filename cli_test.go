@@ -34,6 +34,9 @@ func TestRunHelp(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Phase 6 causal observability plane") {
 		t.Fatalf("help output has stale observability status: %q", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "Phase 7 offline") {
+		t.Fatalf("help output has stale experiment status: %q", stdout.String())
+	}
 	if stderr.Len() != 0 {
 		t.Fatalf("help wrote to stderr: %q", stderr.String())
 	}
@@ -110,5 +113,28 @@ func TestDevProxyHelpAndValidation(t *testing.T) {
 	stderr.Reset()
 	if code := run([]string{"dev-proxy", "--upstream", "invalid"}, &stdout, &stderr); code != exitUsage {
 		t.Fatalf("invalid upstream exit code = %d, want %d", code, exitUsage)
+	}
+}
+
+func TestProductCommandHelpAndValidation(t *testing.T) {
+	for _, command := range []string{"demo", "experiment", "bench"} {
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		if code := run([]string{command, "--help"}, &stdout, &stderr); code != exitOK {
+			t.Fatalf("%s help code = %d; stderr=%q", command, code, stderr.String())
+		}
+		if !strings.Contains(stderr.String(), "Usage: anvil "+command) {
+			t.Fatalf("%s help = %q", command, stderr.String())
+		}
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if code := run([]string{"experiment"}, &stdout, &stderr); code != exitUsage || !strings.Contains(stderr.String(), "--scenario is required") {
+		t.Fatalf("experiment validation code=%d stderr=%q", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := run([]string{"bench"}, &stdout, &stderr); code != exitUsage || !strings.Contains(stderr.String(), "--target is required") {
+		t.Fatalf("bench validation code=%d stderr=%q", code, stderr.String())
 	}
 }

@@ -228,9 +228,9 @@ Read-only routes are `/`, `/api/metrics`, `/api/events`, and `/healthz`. The lis
 
 ### 3.12 Scenario runner and fixtures
 
-Fixtures run on loopback using the same HTTP server engine. A fixture has an atomic behavior profile: healthy, delayed, fixed failure status, truncated response, or unavailable. Scenario steps are scheduled relative to experiment start and recorded before application.
+Fixtures bind loopback listeners through the same bounded TCP lifecycle and parse every request with Anvil's HTTP codec. An immutable profile is swapped atomically between healthy, delayed, configured failure, truncated, unavailable, and recovered modes. Unavailable mode also rejects proxy dials through the existing injectable dial seam, producing a deterministic refusal without an external process. Seeded optional jitter resolves once into a stable relative schedule; each transition event is appended before its profile swap.
 
-The receipt is calculated from ledger sequence/timing, not from dashboard state.
+Strict JSON decoding rejects unknown fields, trailing values, unsafe paths, invalid fixture references, and resource bounds. The validated struct has a canonical standard-library JSON encoding and SHA-256 identity. The receipt is calculated from ledger sequence/timing and benchmark counters, not from dashboard state.
 
 ### 3.13 Benchmark engine
 
@@ -243,7 +243,7 @@ The benchmark client reuses the request serializer and response parser. It owns 
 - Status distribution.
 - Transferred bytes.
 
-It must enforce a maximum concurrency and duration and terminate cleanly on cancellation.
+It enforces fixed worker, request, pacing, duration, and timeout bounds. Each worker owns at most one persistent connection; parent cancellation closes an in-progress socket and every producer/worker has a join path.
 
 ## 4. Concurrency ownership
 
@@ -262,6 +262,10 @@ It must enforce a maximum concurrency and duration and terminate cleanly on canc
 | SSE subscriber registry | RW mutex; fixed maximum subscriber count |
 | SSE subscriber queue | Fixed-capacity channel per subscriber; full queues increment drops |
 | Fixture behavior | Atomic snapshot |
+| Resolved scenario schedule | Runner goroutine; immutable after seeded resolution |
+| Benchmark job queue | One producer, fixed-capacity channel, fixed worker set |
+| Benchmark connection/parser | One worker goroutine only |
+| Benchmark status/error maps | Short result-only mutex; counters and latency buckets are atomic |
 
 No lock may be held while dialing, reading, writing, sleeping, or publishing to an observer.
 

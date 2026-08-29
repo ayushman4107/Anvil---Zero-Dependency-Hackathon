@@ -2,7 +2,7 @@
 
 Anvil is an explainable reverse proxy and resilience-testing lab built for Track C of the Zero Dependency Hackathon. Its core promise is to make every routing, failover, circuit-breaker, and recovery decision observable and reproducible from one offline-capable binary.
 
-> Phase 6 status: Anvil now combines its raw-TCP resilient proxy with a bounded causal ledger, atomic metrics and fixed latency histograms, backend/runtime snapshots, standards-valid SSE replay, and a loopback-only live dashboard. Deterministic experiments and receipts remain the next gate.
+> Phase 7 status: Anvil now runs a complete offline failure/recovery lab: in-process fault fixtures, deterministic strict-JSON scenarios, bounded custom load, live causal observability, ledger-derived assertions, and human/JSON resilience receipts.
 
 ## Requirements
 
@@ -46,7 +46,22 @@ anvil dev-http
 anvil dev-echo
 ```
 
-These product commands are registered and currently fail with an explicit status instead of pretending unfinished functionality exists.
+`demo`, `experiment`, and `bench` are operational. The configured `proxy` product command remains explicitly gated until the JSON route/pool configuration phase; `dev-proxy` remains the runnable manual proxy surface.
+
+Run the complete built-in offline story:
+
+```sh
+anvil demo --json-out receipt.json
+```
+
+Run the checked-in strict scenario or benchmark any local HTTP/1.1 endpoint:
+
+```sh
+anvil experiment --scenario examples/failure-recovery.json --json-out receipt.json
+anvil bench --target 127.0.0.1:8080 --requests 1000 --concurrency 8
+```
+
+The experiment process exits non-zero when initialization, execution, or any declared assertion fails. `--json` sends a machine-readable result to stdout; otherwise Anvil prints a stable plain-text receipt.
 
 The TCP lifecycle proof can be started with:
 
@@ -186,6 +201,18 @@ The observability plane makes Phase 5 decisions inspectable without becoming par
 
 Real-socket tests validate browser-consumable JSON/HTML, native chunked SSE framing through a standard-library client oracle, heartbeat, retained replay, expired replay gaps, subscriber saturation, shutdown, privacy, concurrent metrics, and slow-observer isolation.
 
+## Phase 7 deterministic experiments and receipts
+
+The product story is now self-contained and evidence-driven:
+
+- Loopback fixtures use Anvil's TCP lifecycle, request parser, and response writer. Their immutable atomic profiles support healthy, delayed, configured failure, deliberately truncated, unavailable, and recovered behavior.
+- Scenarios are decoded with unknown-field rejection and strict trailing-data checks. Fixture counts, step counts, workers, requests, durations, timeouts, and ledger capacity all have hard limits.
+- `seed` resolves optional per-step jitter reproducibly. The normalized validated scenario is encoded in a stable struct order and identified by a SHA-256 configuration hash.
+- Scenario transitions are appended to the causal ledger before the atomic fixture profile changes, preserving the decision timeline used by the receipt.
+- The benchmark engine uses Anvil's request serializer and response parser. A fixed worker set owns its connections and reports pacing, status/error classes, transferred wire bytes, new/reused connections, peak in-flight work, throughput, and fixed-bucket latency estimates.
+- Receipts derive request success, failure streak, failover, and recovery from sequenced ledger events. Benchmark/ledger reconciliation is itself an assertion rather than an assumed property.
+- The built-in `demo` and checked-in `examples/failure-recovery.json` execute the same canonical scenario. Three consecutive offline recovery runs are part of the automated suite.
+
 ## Competitive differentiator
 
 Anvil's competitive edge is causal resilience evidence: a bounded decision ledger explains why an upstream was selected or skipped, when health and circuit state changed, what the client observed, and how the system recovered. Deterministic experiments turn that ledger into a machine-readable and human-readable resilience receipt.
@@ -207,11 +234,11 @@ The mandatory design, protocol boundaries, test strategy, demo, and execution ga
 - The runtime does not shell out to tools or depend on network services.
 - The raw server and proxy core do not use `net/http`; tests may use it only as an independent compatibility oracle.
 
-See `STDLIB.md` for substitutions actually implemented through Phase 6. Planned substitutions remain in `STDLIB_DRAFT.md` and do not count as shipped work.
+See `STDLIB.md` for substitutions actually implemented through Phase 7. Planned substitutions remain in `STDLIB_DRAFT.md` and do not count as shipped work.
 
 ## Current limitations
 
-Phase 6 is a working observable resilience proxy, but the product `proxy` command remains gated until JSON route/pool configuration exists. There is no deterministic fixture/scenario runner, resilience receipt, integrated benchmark engine, or experiment configuration hash yet. Metrics are in-memory and process-local; histogram percentiles are bucket estimates. SSE delivery is intentionally lossy for slow subscribers, with drops exposed and replay limited to the retained ledger. Proxy bodies remain buffered and non-streaming; active health checks remain opt-in for arbitrary development backends without `/health`.
+Phase 7 completes the offline experiment story, but the general `proxy` command remains gated until JSON route/pool configuration exists. Experiment scenarios intentionally support GET load only and bounded in-memory receipts; they are evidence from a controlled lab, not production certification. Metrics are process-local and histogram percentiles are bucket estimates. SSE is intentionally lossy for slow subscribers, with replay limited to the retained ledger. Proxy bodies remain buffered and non-streaming; active health checks remain opt-in for arbitrary development backends without `/health`.
 
 ## License
 

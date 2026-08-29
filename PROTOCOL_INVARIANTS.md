@@ -165,7 +165,21 @@ Framing is determined once, before body consumption.
 13. Metrics JSON and the dashboard are read-only, non-cacheable, and served only by the administration listener.
 14. Runtime and histogram values are observations, never inputs to backend selection or circuit transitions.
 
-## 15. Error mapping invariants
+## 15. Experiment, fixture, and receipt invariants
+
+1. Scenarios reject unknown JSON fields, trailing JSON values, invalid references, and every configured count/duration outside its hard bound.
+2. The canonical scenario hash is SHA-256 over the validated normalized scenario, not raw whitespace or object formatting.
+3. A seed plus canonical scenario produces the same resolved step times and ordering.
+4. A fixture profile is immutable after publication and replaced atomically; request handlers never observe a partially updated fault configuration.
+5. A scenario transition is appended to the ledger before the corresponding fixture profile swap.
+6. Fixture and administration listeners are loopback-only and owned by the experiment lifecycle.
+7. Benchmark workers, queued jobs, requests, duration, pacing, bodies, and connections are bounded. Each connection has one worker owner.
+8. Parent cancellation closes in-progress benchmark I/O and joins the producer, workers, health checker, proxy, admin server, and every fixture server.
+9. Receipt request, failure-streak, failover, and recovery measurements come from ordered ledger events. Client result counters are reconciled explicitly rather than silently substituted.
+10. A failed assertion makes the experiment process exit non-zero. A receipt is controlled-lab evidence, not certification.
+11. Receipt and fixture JSON expose aliases and modes, never raw fixture or backend socket addresses.
+
+## 16. Error mapping invariants
 
 | Condition | Downstream result before commit |
 |---|---|

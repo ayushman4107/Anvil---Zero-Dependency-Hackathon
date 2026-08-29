@@ -140,18 +140,16 @@ Do not claim full API compatibility unless implemented and tested.
 
 “Anvil is intentionally HTTP/1.1-only and starts with bounded body buffering; those limits are documented. Within that scope it is testable, useful, explainable, and dependency-free. Break the backend. Keep the edge. Explain every decision.”
 
-## Commands to finalize
-
-Replace placeholders only after the CLI is implemented:
+## Phase 7 rehearsal commands
 
 ```text
-<go-version-command>
-<dependency-proof-command>
-<one-command-build>
-<focused-protocol-test>
-<demo-or-experiment-command>
-<receipt-output-command-or-path>
-<reproducibility-verifier>
+go version
+go list -deps -f '{{if and (not .Standard) (not .Module.Main)}}{{.ImportPath}}{{end}}' ./...
+go build -trimpath -buildvcs=false -o anvil.exe .
+go test -run TestOfflineFailureRecoveryExperimentThreeConsecutiveRuns -v ./...
+./anvil demo --json-out receipt.json
+./anvil experiment --scenario examples/failure-recovery.json --json-out receipt.json
+./anvil bench --target 127.0.0.1:8080 --requests 1000 --concurrency 8
 ```
 
 Never record commands that differ from README instructions.

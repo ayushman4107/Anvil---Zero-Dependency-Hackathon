@@ -1,4 +1,4 @@
-Anvil Phase 6 zero-dependency proof
+Anvil Phase 7 zero-dependency proof
 Generated: 2026-08-29
 Toolchain: go version go1.27.0 windows/amd64
 

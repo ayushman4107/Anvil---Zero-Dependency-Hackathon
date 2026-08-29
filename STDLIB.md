@@ -8,11 +8,11 @@ Anvil is built with Go 1.27.0. Its `go.mod` has no `require` directive, producti
 
 Production HTTP code does not import `net/http` or `net/http/httputil`. Compatibility tests use `net/http.ReadRequest` and `net/http.ReadResponse` only as an independent wire-format oracle.
 
-## Implemented substitutions — through Phase 6
+## Implemented substitutions — through Phase 7
 
 | Normally installed | Anvil implementation | Standard-library packages | Current boundary |
 |---|---|---|---|
-| CLI framework such as Cobra | Explicit subcommand dispatch, help, exit codes, repeatable upstream flags, and per-command validation | `flag`, `fmt`, `io`, `os` | Product commands are registered; `dev-echo`, `dev-http`, and `dev-proxy` are clearly labelled runnable proofs |
+| CLI framework such as Cobra | Explicit subcommand dispatch, help, exit codes, repeatable upstream flags, per-command validation, and assertion-controlled experiment status | `flag`, `fmt`, `io`, `os`, `os/signal` | `demo`, `experiment`, and `bench` ship; configured `proxy` remains explicitly gated |
 | TCP server/framework | Raw listener, hard admission bound, goroutine ownership, I/O deadlines, bounded graceful drain, forced close, panic containment, and lifecycle counters | `net`, `io`, `context`, `sync`, `sync/atomic`, `time` | Reusable transport foundation now drives the raw HTTP server |
 | HTTP engine such as `fasthttp` or a framework server | Hand-written incremental HTTP/1.1 request/response parser, strict framing state, fixed/chunked/close-delimited bodies, ordered fields, bounded trailers, typed failures, sequential persistence, error mapping, and pre-commit generated-response validation | `bufio`, `bytes`, `io`, `net`, `strconv`, `strings` | The same codec now serves downstream clients and parses upstream responses |
 | HTTP serializer or `net/http/httputil` | Structured request/response reconstruction, accurate Content-Length, chunk writer, forbidden-body rules, header validation, hop-by-hop sanitation, partial-write handling, and fully buffered replay | `fmt`, `io`, `strconv`, `strings` | Drives forwarding, active probes, and method-aware safe retry without a high-level HTTP client |
@@ -26,6 +26,10 @@ Production HTTP code does not import `net/http` or `net/http/httputil`. Compatib
 | Structured event/ledger package | Typed metadata-only events, monotonic sequence assignment, fixed-capacity ring, bounded replay, and explicit expired/future cursor gaps | `sync`, `time`, `encoding/json` | No bodies, sensitive headers, or backend addresses exist in the event schema |
 | SSE/WebSocket telemetry package | Separate raw-TCP admin handler, validated chunked headers, native chunk writer, event IDs/types, heartbeat comments, Last-Event-ID replay, bounded subscribers/queues, and drop counters | `net`, `bufio`, `context`, `sync`, `sync/atomic`, `time` | Non-blocking lossy fan-out prevents observer back-pressure; tests use `net/http` only as a wire oracle |
 | Dashboard framework and asset pipeline | Inline responsive HTML/CSS/vanilla JavaScript, same-origin JSON polling and EventSource timeline, topology cards, rates, status, estimated latency, and runtime/drop visibility | Go raw string constant, `encoding/json` | Offline and single-file-compatible; no CDN, npm, generated bundle, or external asset |
+| Load generator such as hey, wrk, or vegeta | Fixed worker set, optional pacing, bounded duration/count, owned persistent connections, wire-byte accounting, error/status classes, cancellation, and fixed latency buckets | `net`, `bufio`, `context`, `sync`, `sync/atomic`, `time` | Uses Anvil's serializer/parser; no external process or high-level HTTP client |
+| Chaos/fixture framework | In-process loopback backends with atomic immutable healthy, delayed, failure, truncated, unavailable, and recovered profiles | `net`, `sync/atomic`, `time` | Uses Anvil's TCP lifecycle and HTTP codec; unavailable dial behavior is injected at Anvil's dial seam |
+| Scenario/configuration framework | Strict unknown-field-rejecting JSON, hard resource limits, seeded relative jitter, stable normalized encoding, and SHA-256 identity | `encoding/json`, `crypto/sha256`, `math/rand`, `sort` | Phase 7 experiment schema only; general proxy route/pool JSON remains gated |
+| Assertion/reporting framework | Ledger-derived success/failure streak, failover and recovery measurements, benchmark reconciliation, stable text, and JSON receipts | `encoding/json`, `fmt`, `sort` | Failed assertions produce a non-zero process exit; receipts are controlled-lab evidence, not certification |
 | UUID/request-ID package | 128 random bits with UUID version/variant bits encoded as a bounded lowercase token | `crypto/rand`, `encoding/hex` | Generated IDs replace untrusted inbound Anvil IDs and remain stable across each transaction |
 | Assertion/test helper and protocol-fuzz package | Table-driven checks, fragmentation readers, deterministic mutation corpus, virtual clocks, native fuzz targets, polling helpers, byte comparisons, real sockets, raw failure fixtures, and a `net/http` compatibility oracle | `testing`, `bytes`, `math/rand`, `sync/atomic` | Also covers ledger wrap, privacy, metric reconciliation, SSE framing/replay/gaps, subscriber saturation, admin isolation, and slow-observer behavior |
 
@@ -43,4 +47,4 @@ Expected output: no package paths after excluding Anvil's own main module.
 
 ## Honest status
 
-The experiment runner, resilience receipt, benchmark engine, canonical configuration hash, and JSON route/pool configuration are planned, not yet implemented, and therefore are not counted here. `dev-proxy` proves the Phase 6 observable resilience core but is not a claim that the final configured product command exists.
+The experiment runner, fault fixtures, benchmark engine, canonical scenario hash, assertions, and resilience receipts are implemented. General JSON route/pool configuration is still planned, so `proxy` remains gated and `dev-proxy` remains the manual proxy surface. Phase 7 scenarios and receipts describe bounded local experiments; they do not claim production readiness or certification.

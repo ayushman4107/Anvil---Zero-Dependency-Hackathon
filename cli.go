@@ -35,7 +35,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runDevHTTP(args[1:], stdout, stderr)
 	case "dev-proxy":
 		return runDevProxy(args[1:], stdout, stderr)
-	case "proxy", "demo", "experiment", "bench":
+	case "demo":
+		return runDemo(args[1:], stdout, stderr)
+	case "experiment":
+		return runExperimentCommand(args[1:], stdout, stderr)
+	case "bench":
+		return runBenchCommand(args[1:], stdout, stderr)
+	case "proxy":
 		return runPlannedCommand(args[0], args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "%s: unknown command %q\n\n", programName, args[0])
@@ -52,9 +58,9 @@ Usage:
 
 Commands:
   proxy       Run the reverse proxy (planned)
-  demo        Run the self-contained resilience demo (planned)
-  experiment  Execute a deterministic failure experiment (planned)
-  bench       Benchmark the Anvil data path (planned)
+  demo        Run the self-contained offline failure/recovery story
+  experiment  Execute a strict JSON deterministic failure experiment
+  bench       Run the bounded custom HTTP benchmark client
   dev-echo    Run the Phase 1 raw-TCP lifecycle proof
   dev-http    Run the Phase 3 raw HTTP server/router proof
   dev-proxy   Run the Phase 6 observable resilience-proxy proof
@@ -62,8 +68,9 @@ Commands:
 
 The current build includes the Phase 1 TCP lifecycle, Phase 2 strict HTTP/1.1
 codec, Phase 3 network-facing server/router, Phase 4 bounded proxy transaction,
-Phase 5 resilience core, and Phase 6 causal observability plane. Product commands
-fail explicitly until their acceptance gates complete.`)
+Phase 5 resilience core, Phase 6 causal observability plane, and Phase 7 offline
+experiment, benchmark, and resilience receipt. The configured proxy product
+command remains explicitly gated until its JSON route configuration lands.`)
 }
 
 func runDevHTTP(args []string, stdout, stderr io.Writer) int {

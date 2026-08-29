@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "name": "anvil-offline-failure-recovery",
+  "seed": 4107,
+  "duration_ms": 6000,
+  "fixtures": [
+    {
+      "alias": "forge-a",
+      "initial_mode": "healthy"
+    },
+    {
+      "alias": "forge-b",
+      "initial_mode": "healthy"
+    }
+  ],
+  "steps": [
+    {
+      "at_ms": 1500,
+      "fixture": "forge-a",
+      "mode": "unavailable"
+    },
+    {
+      "at_ms": 3500,
+      "fixture": "forge-a",
+      "mode": "recovered"
+    }
+  ],
+  "load": {
+    "workers": 4,
+    "requests": 120,
+    "rate_per_second": 20,
+    "path": "/work",
+    "timeout_ms": 1000
+  },
+  "resilience": {
+    "max_attempts": 2,
+    "retry_timeout_ms": 750,
+    "passive_failures": 1,
+    "passive_interval_ms": 5000,
+    "circuit_cooldown_ms": 500,
+    "half_open_successes": 1,
+    "health_interval_ms": 200,
+    "health_timeout_ms": 100,
+    "health_failures": 1,
+    "health_successes": 1
+  },
+  "assertions": {
+    "minimum_success_rate": 0.95,
+    "maximum_failure_streak": 2,
+    "maximum_failover_ms": 1000,
+    "require_recovery": true
+  },
+  "ledger_capacity": 2048
+}
