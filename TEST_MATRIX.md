@@ -202,6 +202,7 @@ No third-party test framework is permitted or needed.
 | BUILD-009 | P1 | Allocation benchmark | Only a measured hot path is optimized; before/after values recorded honestly |
 | BUILD-010 | P1 | Checked-in reproducibility verifier | Uses Go 1.27.0, pinned flags, isolated caches/output, matching hashes, and exact-path cleanup |
 | BUILD-011 | P0 | Submission hygiene | No tracked secret, private path, toolchain, cache, temporary binary, or unsupported bonus claim |
+| BUILD-012 | P0 | Checked-in zero-dependency gate | Dependency directives/artifacts, external modules/imports, and production `net/http` fail before reproducible builds; negative fixtures prove the rejection paths |
 
 ## Acceptance gates
 

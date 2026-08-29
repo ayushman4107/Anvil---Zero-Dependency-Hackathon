@@ -19,6 +19,8 @@ if ($version -notmatch '\bgo1\.27\.0\b') {
     throw "Reproducible-build evidence requires Go 1.27.0; found: $version"
 }
 
+& (Join-Path $PSScriptRoot "verify-zero-dep.ps1") -GoPath $goExecutable -RepositoryRoot $PSScriptRoot
+
 $repository = (Resolve-Path -LiteralPath $PSScriptRoot).Path
 $temporaryParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar)
 $temporaryRoot = Join-Path $temporaryParent ("anvil-repro-" + [guid]::NewGuid().ToString("N"))

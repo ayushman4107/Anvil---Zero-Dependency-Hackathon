@@ -93,12 +93,13 @@ go fmt ./...
 go test ./...
 go test -race ./...
 go vet ./...
-go list -deps -f '{{if and (not .Standard) (not .Module.Main)}}{{.ImportPath}}{{end}}' ./...
 ```
 
-The final command excludes Anvil's own main module and must print no package paths.
+On Windows, run `.\verify-zero-dep.ps1` to enforce the source and module boundary. It fails if `go.mod` gains dependency directives; if `go.sum`, `go.work`, or `vendor/` appears; if the module graph gains another module; if production imports a non-standard package; or if production imports `net/http`.
 
-Run `.\verify-repro.ps1` from PowerShell to build twice in an isolated temporary directory and fail unless both SHA-256 hashes match.
+Run `.\verify-repro.ps1` from PowerShell to execute that zero-dependency gate, build twice in an isolated temporary directory, and fail unless both SHA-256 hashes match.
+
+The repository also ships `.githooks/pre-commit`, which runs the same gate before a commit. Enable it once per clone with `git config core.hooksPath .githooks`; this checkout already has it enabled. The hook uses `go` from `PATH`, or the executable selected by `ANVIL_GO` when the toolchain is intentionally portable.
 
 ## Command surface
 

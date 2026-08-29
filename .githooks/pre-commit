@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+repository_root=$(git rev-parse --show-toplevel)
+go_path=${ANVIL_GO:-go}
+
+if command -v pwsh >/dev/null 2>&1; then
+    powershell_command=pwsh
+elif command -v powershell.exe >/dev/null 2>&1; then
+    powershell_command=powershell.exe
+else
+    echo "Anvil pre-commit: PowerShell is required to run verify-zero-dep.ps1." >&2
+    exit 1
+fi
+
+"$powershell_command" -NoProfile -ExecutionPolicy Bypass \
+    -File "$repository_root/verify-zero-dep.ps1" \
+    -GoPath "$go_path" \
+    -RepositoryRoot "$repository_root"

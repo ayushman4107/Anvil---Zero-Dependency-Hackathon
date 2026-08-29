@@ -64,7 +64,15 @@ test-only additions: net/http reflect runtime testing
 
 ## Dependency verification
 
-Run:
+Run the enforced boundary on Windows:
+
+```powershell
+.\verify-zero-dep.ps1
+```
+
+It fails on dependency directives in `go.mod`, dependency/workspace artifacts, external modules, non-standard production imports, or production `net/http`. The reproducibility verifier invokes it automatically.
+
+The underlying module-graph audit remains:
 
 ```sh
 go list -deps -f '{{if and (not .Standard) (not .Module.Main)}}{{.ImportPath}}{{end}}' ./...
@@ -74,7 +82,7 @@ Expected output: no package paths after excluding Anvil's own main module.
 
 `go list -m all` must list only the Anvil module itself.
 
-The captured final-checkout output is in `deps-proof.txt`; `verify-repro.ps1` independently proves byte-for-byte repeatability of the pinned native build.
+The captured final-checkout output is in `deps-proof.txt`; `verify-repro.ps1` enforces the dependency boundary and independently proves byte-for-byte repeatability of the pinned native build.
 
 ## Honest status
 

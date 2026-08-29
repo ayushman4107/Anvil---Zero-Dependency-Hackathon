@@ -7,22 +7,25 @@
 - Toolchain: Go 1.27.0, windows/amd64, `CGO_ENABLED=0` for release builds
 - Benchmark host: AMD Ryzen AI 7 350 with Radeon 860M
 - Pitch: Every failover leaves a receipt: an explainable reverse proxy and resilience lab in one zero-dependency binary.
-- Behavior freeze: Phase 9 adds no feature scope. It includes one narrow experiment-shutdown correction found by the final repeated gate and one deterministic test-oracle correction.
+- Behavior freeze: Phase 9 adds no feature scope. It includes one narrow experiment-shutdown correction found by the final repeated gate, one deterministic test-oracle correction, and a tracked zero-dependency enforcement gate.
 
 ## Clean gate
 
 | Gate | Exact command | Result |
 |---|---|---|
 | Formatting | `gofmt -l` over every Go file | PASS — no paths returned |
-| Standard tests | `go test -count=3 ./...` | PASS — package completed in 24.169 s after the final fixes |
+| Standard tests | `go test -count=3 ./...` | PASS — package completed in 26.911 s on the safeguard checkout |
 | Static analysis | `go vet ./...` | PASS |
-| Race detector | `go test -c -race -o anvil-race.test.exe .`, then `anvil-race.test.exe -test.count=3` using MinGW-w64 GCC | PASS — three complete race-enabled executions; the temporary test binary was removed |
+| Race detector | `go test -c -race -o anvil-race.test.exe .`, then `anvil-race.test.exe -test.count=3` using MinGW-w64 GCC | PASS for the unchanged Go source — Phase 9 recorded three complete race-enabled executions; the safeguard refresh compiled successfully with race instrumentation, while Windows Smart App Control blocked launching the newly generated unsigned executable |
+| Enforced dependency boundary | `.\verify-zero-dep.ps1` | PASS — one module, 27 production Go files, 24 unique production imports, no production `net/http`, and no external dependency |
 | Module graph | `go list -m all` | PASS — only `github.com/ayushman4107/Anvil---Zero-Dependency-Hackathon` |
 | External imports | `go list -deps -f '{{if and (not .Standard) (not .Module.Main)}}{{.ImportPath}}{{end}}' ./...` | PASS — empty output |
 | Manifest | `go mod edit -json` | PASS — module and Go version only; no requirements |
 | Reproducibility | `.\verify-repro.ps1` | PASS — matching hashes below |
 
 Phase 8's four native fuzz targets, Slowloris/slow-upstream/admission/shutdown regressions, curl HTTP/1.1 compatibility, and real Chromium dashboard check remain recorded in `HARDENING.md`. Phase 9 does not change the HTTP codec, proxy transaction, breaker, observer, or dashboard code.
+
+The enforcement script was also exercised against isolated negative fixtures. It rejected a `require` directive, a production `net/http` import, and a third-party production import. `verify-repro.ps1` invokes this gate before building, and the tracked `.githooks/pre-commit` invokes it before commits when `core.hooksPath` is enabled, so dependency drift does not rely on a manual audit.
 
 ## Release-blocker corrections found by the gate
 
@@ -51,9 +54,9 @@ All three runs used the binary identified above and scenario SHA-256 `1b54431082
 
 | Run | Requests | Successes | Failures | Failover | Recovery | Active fixtures at receipt | Ledger reconciled | Assertions |
 |---:|---:|---:|---:|---:|---:|---:|---|---|
-| 1 | 119 | 119 | 0 | 1.453 ms | 249.065 ms | 0 | yes | PASS |
-| 2 | 120 | 120 | 0 | 1.947 ms | 247.232 ms | 0 | yes | PASS |
-| 3 | 120 | 120 | 0 | 1.745 ms | 252.031 ms | 0 | yes | PASS |
+| 1 | 120 | 120 | 0 | 0.000 ms | 250.710 ms | 0 | yes | PASS |
+| 2 | 120 | 120 | 0 | 1.096 ms | 250.348 ms | 0 | yes | PASS |
+| 3 | 120 | 120 | 0 | 0.650 ms | 251.528 ms | 0 | yes | PASS |
 
 These are controlled local measurements, not production service-level claims.
 
