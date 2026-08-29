@@ -2,13 +2,13 @@
 
 ## Scope
 
-This file records only functionality present in the current build. `STDLIB_DRAFT.md` contains planned substitutions and is not evidence of shipped work.
+This file records only functionality present in the Phase 9 submission candidate. Planned, partial, dead, and stretch-only substitutions are excluded.
 
 Anvil is built with Go 1.27.0. Its `go.mod` has no `require` directive, production imports resolve only to the Go standard library, no package source is vendored, and the runtime does not invoke separately installed tools or services.
 
 Production HTTP code does not import `net/http` or `net/http/httputil`. Compatibility tests use `net/http.ReadRequest` and `net/http.ReadResponse` only as an independent wire-format oracle.
 
-## Implemented substitutions — through Phase 8
+## Implemented substitutions — final submission
 
 | Normally installed | Anvil implementation | Standard-library packages | Current boundary |
 |---|---|---|---|
@@ -33,6 +33,35 @@ Production HTTP code does not import `net/http` or `net/http/httputil`. Compatib
 | UUID/request-ID package | 128 random bits with UUID version/variant bits encoded as a bounded lowercase token | `crypto/rand`, `encoding/hex` | Generated IDs replace untrusted inbound Anvil IDs and remain stable across each transaction |
 | Assertion/test helper and protocol-fuzz package | Table-driven checks, fragmentation readers, deterministic mutation corpus, virtual clocks, four native fuzz targets, allocation benchmarks, byte comparisons, real sockets, raw failure fixtures, and a `net/http` compatibility oracle | `testing`, `bytes`, `math/rand`, `sync/atomic` | Also covers Slowloris/isolation, allocation caps, joined cancellation, forbidden no-content framing, observer ordering, privacy, reconciliation, SSE saturation, and browser/curl compatibility |
 
+## Flagship Package Killer — circuit breaker
+
+Anvil replaces the circuit-breaker behavior for which this project would otherwise use [`github.com/sony/gobreaker`](https://github.com/sony/gobreaker/blob/master/gobreaker.go). This is a behavioral substitution inside the proxy, not source reuse, a fork, or API compatibility.
+
+| Concern | `sony/gobreaker` | Shipped Anvil behavior |
+|---|---|---|
+| States | Closed, open, and half-open | Closed, open, and half-open per backend |
+| Trip decision | User `ReadyToTrip(Counts)` callback; default is consecutive-failure based | Validated integer threshold over typed passive proxy failures inside a bounded interval |
+| Closed-state reset | Configured cyclic `Interval` clears counts | A success or elapsed passive interval resets Anvil's passive failure window |
+| Open cooldown | `Timeout` changes an open breaker to half-open when state is next evaluated | Configured cooldown permits the next bounded selection or active probe to transition to half-open |
+| Half-open admission | `MaxRequests` | `HalfOpenMaxRequests`, independently bounded by backend admission |
+| Recovery evidence | Enough successful half-open requests closes the breaker | Configured half-open success count closes it; any permitted half-open failure restarts cooldown |
+| Success classification | User `IsSuccessful(error)` callback | Proxy outcomes classify refusal, timeout, incomplete/protocol response, configured status, and optional slow latency; neutral outcomes do not affect the breaker |
+| Transition callback | `OnStateChange` | Reason-coded transition published after releasing the backend state mutex |
+| Proxy integration | Generic execute/two-step wrapper | Eligibility filtering, distinct-backend retry, active-health probes, `Proxy-Status`, metrics, snapshots, and the causal ledger share one backend state |
+
+Important differences: Anvil exposes no compatible `CircuitBreaker`, `TwoStepCircuitBreaker`, generic-function, or generic-result API; it has no arbitrary `ReadyToTrip` or `IsSuccessful` callback; and its counters/snapshots are proxy-specific rather than `gobreaker.Counts`. The default thresholds also differ. Claims are limited to the semantics above. `resilience_test.go` covers closed/open/half-open transitions, cooldown, bounded probes, recovery, cooldown restart, interval reset, active-health recovery, callback re-entry, and concurrent state access.
+
+## Exact direct-import inventory
+
+Generated from the submission candidate with `go list`; transitive standard-library internals are intentionally omitted.
+
+```text
+production: bufio bytes context crypto/rand crypto/sha256 encoding/hex encoding/json errors flag fmt io math math/rand net os os/signal runtime/metrics sort strconv strings sync sync/atomic syscall time
+test-only additions: net/http reflect runtime testing
+```
+
+`net/http` appears only in tests as an independent compatibility oracle. Neither production nor tests import a third-party package.
+
 ## Dependency verification
 
 Run:
@@ -45,6 +74,8 @@ Expected output: no package paths after excluding Anvil's own main module.
 
 `go list -m all` must list only the Anvil module itself.
 
+The captured final-checkout output is in `deps-proof.txt`; `verify-repro.ps1` independently proves byte-for-byte repeatability of the pinned native build.
+
 ## Honest status
 
-The experiment runner, fault fixtures, benchmark engine, canonical scenario hash, assertions, resilience receipts, and Phase 8 hardening gates are implemented. General JSON route/pool configuration is still planned, so `proxy` remains gated and `dev-proxy` remains the manual proxy surface. Scenarios, receipts, compatibility checks, and benchmarks describe bounded local evidence; they do not claim production readiness or certification.
+The experiment runner, fault fixtures, benchmark engine, canonical scenario hash, assertions, resilience receipts, and Phase 8 hardening gates are implemented. General JSON route/pool configuration is not shipped, so `proxy` remains gated and `dev-proxy` remains the manual proxy surface. Structured logging, DNS, TLS, compression, rate limiting, and the Single File bonus are not counted. Scenarios, receipts, compatibility checks, and benchmarks describe bounded local evidence; they do not claim production readiness or certification.

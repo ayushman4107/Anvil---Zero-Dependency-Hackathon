@@ -204,15 +204,15 @@ func (l *experimentLab) run(parent context.Context, progress io.Writer) (resilie
 	<-scheduleDone
 	l.waitForObserverIdle(time.Duration(l.scenario.Load.TimeoutMS*2) * time.Millisecond)
 	l.health.Stop()
+	_ = l.pool.Close()
+	cancel()
+	serviceErr := l.waitServices(results, serviceCount)
 	ledger := l.observer.ledger.snapshotSince(0)
 	fixtureSnapshots := make([]fixtureSnapshot, 0, len(l.fixtures))
 	for _, fixture := range l.fixtures {
 		fixtureSnapshots = append(fixtureSnapshots, fixture.snapshot())
 	}
 	receipt := deriveReceipt(l.scenario, l.hash, ledger, benchmark, fixtureSnapshots)
-	_ = l.pool.Close()
-	cancel()
-	serviceErr := l.waitServices(results, serviceCount)
 	if benchmarkErr != nil {
 		return receipt, benchmarkErr
 	}

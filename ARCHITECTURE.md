@@ -232,6 +232,8 @@ Fixtures bind loopback listeners through the same bounded TCP lifecycle and pars
 
 Strict JSON decoding rejects unknown fields, trailing values, unsafe paths, invalid fixture references, and resource bounds. The validated struct has a canonical standard-library JSON encoding and SHA-256 identity. The receipt is calculated from ledger sequence/timing and benchmark counters, not from dashboard state.
 
+Receipt capture is a teardown boundary, not a live best-effort snapshot. After load and the fault schedule finish, the runner waits for proxy work, stops and joins health workers, closes the upstream pool, cancels the lab context, and joins the fixture, proxy, and admin servers. Only then does it snapshot the ledger and fixtures. This prevents post-receipt events and guarantees every recorded fixture has zero active work.
+
 ### 3.13 Benchmark engine
 
 The benchmark client reuses the request serializer and response parser. It owns a bounded worker set and reports:

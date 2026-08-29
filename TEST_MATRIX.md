@@ -173,6 +173,8 @@ No third-party test framework is permitted or needed.
 | EXP-008 | P0 | Three consecutive offline runs | Each receipt passes and ledger/benchmark counts reconcile |
 | EXP-009 | P0 | Fixture mode matrix | Healthy, delayed, failure, truncated, unavailable, and recovered behavior observed through Anvil codec |
 | EXP-010 | P0 | Scenario byte/arithmetic bounds | Oversized input and overflowing step arithmetic rejected before decode/schedule |
+| EXP-011 | P1 | Assertion-controlled command exit | Deterministically unavailable fixtures violate a 100% success assertion and produce failure exit/output independent of machine timing |
+| EXP-012 | P0 | Receipt teardown ownership | Health, pool, proxy/admin, and fixture services stop and join before receipt snapshots; every fixture reports zero active work |
 | BENCH-001 | P0 | Bounded workers | Configured concurrency never exceeded |
 | BENCH-002 | P0 | Known response counts | Status and error totals reconcile |
 | BENCH-003 | P0 | Cancellation | Workers and connections terminate |
@@ -194,10 +196,12 @@ No third-party test framework is permitted or needed.
 | BUILD-003 | P0 | Module/dependency audit | No external module |
 | BUILD-004 | P1 | Build twice | Byte-identical SHA-256 hashes |
 | BUILD-005 | P1 | Clean checkout | Instructions are sufficient |
-| BUILD-006 | P1 | Single-file audit if claimed | One implementation source file |
+| BUILD-006 | P1 | Single-file audit | Claim is retained only if consolidation remains readable; otherwise the bonus is explicitly declined |
 | BUILD-007 | P0 | Documentation audit | README, STDLIB, limits, license, proof present |
 | BUILD-008 | P0 | Allocation-bearing configuration audit | Platform-sized counts/durations rejected before make/convert |
 | BUILD-009 | P1 | Allocation benchmark | Only a measured hot path is optimized; before/after values recorded honestly |
+| BUILD-010 | P1 | Checked-in reproducibility verifier | Uses Go 1.27.0, pinned flags, isolated caches/output, matching hashes, and exact-path cleanup |
+| BUILD-011 | P0 | Submission hygiene | No tracked secret, private path, toolchain, cache, temporary binary, or unsupported bonus claim |
 
 ## Acceptance gates
 

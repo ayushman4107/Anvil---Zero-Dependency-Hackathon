@@ -40,14 +40,20 @@ func TestOfflineFailureRecoveryExperimentThreeConsecutiveRuns(t *testing.T) {
 
 func TestScenarioAssertionFailureControlsCommandExit(t *testing.T) {
 	value := fastExperimentScenario()
-	value.Steps[0] = scenarioStep{AtMS: 180, Fixture: "forge-a", Mode: fixtureDelayed, DelayMS: 100}
-	value.Assertions.MaximumFailoverMS = 1
+	value.Steps = []scenarioStep{
+		{AtMS: 100, Fixture: "forge-a", Mode: fixtureUnavailable},
+		{AtMS: 100, Fixture: "forge-b", Mode: fixtureUnavailable},
+		{AtMS: 700, Fixture: "forge-a", Mode: fixtureRecovered},
+		{AtMS: 700, Fixture: "forge-b", Mode: fixtureRecovered},
+	}
+	value.Assertions.MinimumSuccessRate = 1
+	value.Assertions.MaximumFailureRun = value.Load.Requests
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	if code := runScenarioCommand(value, false, "", &stdout, &stderr); code != exitFailure {
 		t.Fatalf("exit code = %d; stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "Anvil resilience receipt: FAIL") || !strings.Contains(stdout.String(), "[FAIL] maximum_failover_time") {
+	if !strings.Contains(stdout.String(), "Anvil resilience receipt: FAIL") || !strings.Contains(stdout.String(), "[FAIL] minimum_success_rate") {
 		t.Fatalf("failing receipt output = %q", stdout.String())
 	}
 }

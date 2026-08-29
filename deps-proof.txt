@@ -1,6 +1,15 @@
-Anvil Phase 8 zero-dependency proof
-Generated: 2026-08-29
+Anvil Phase 9 final-checkout zero-dependency proof
+Generated: 2026-08-30
 Toolchain: go version go1.27.0 windows/amd64
+Environment: GOVERSION=go1.27.0 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 GOTOOLCHAIN=local
+
+Command:
+go mod edit -json
+
+Relevant output:
+module path: github.com/ayushman4107/Anvil---Zero-Dependency-Hackathon
+go version: 1.27.0
+require entries: none
 
 Command:
 go list -deps -f '{{if and (not .Standard) (not .Module.Main)}}{{.ImportPath}}{{end}}' ./...
@@ -16,3 +25,20 @@ github.com/ayushman4107/Anvil---Zero-Dependency-Hackathon
 
 Manifest check:
 go.mod contains only the module path and Go version; it has no require directive.
+
+Production direct-import check:
+go list -f '{{range .Imports}}{{println .}}{{end}}' .
+
+Result:
+Every production direct import is a Go standard-library path. Production does not import net/http or net/http/httputil; net/http is test-only compatibility-oracle code.
+
+Reproducible-build command (with Go 1.27.0 in PATH):
+.\verify-repro.ps1
+
+Pinned flags:
+CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags="-s -w -buildid="
+
+Result:
+first SHA-256:  470A0FF8351CDA0BE2727E0B3E83B25C12DFDD44202078E7D3A849066C683974
+second SHA-256: 470A0FF8351CDA0BE2727E0B3E83B25C12DFDD44202078E7D3A849066C683974
+byte-for-byte match: yes

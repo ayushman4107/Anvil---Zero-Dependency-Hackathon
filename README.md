@@ -1,26 +1,89 @@
 # Anvil
 
-Anvil is an explainable reverse proxy and resilience-testing lab built for Track C of the Zero Dependency Hackathon. Its core promise is to make every routing, failover, circuit-breaker, and recovery decision observable and reproducible from one offline-capable binary.
+**Every failover leaves a receipt.** Anvil is an explainable reverse proxy and resilience-testing lab built for Track C of the Zero Dependency Hackathon. It makes routing, retry, circuit-breaker, and recovery decisions observable and reproducible from one offline-capable binary.
 
-> Phase 8 status: Anvil's complete offline failure/recovery lab is now protocol- and concurrency-hardened with allocation caps, overflow-safe scenarios, strict no-content framing, joined cancellation callbacks, ordered lock-safe observer delivery, expanded fuzzing, and real curl/browser compatibility evidence.
+> Submission status: the mandatory failure/recovery story is complete and frozen. Phase 9 adds no feature scope; its only runtime correction makes experiment shutdown join every lab service before fixture state is captured in the receipt.
+
+## The problem
+
+Local resilience tests usually require a proxy, load generator, fault fixtures, metrics stack, dashboard, and several configuration layers. When a request fails over, those disconnected tools rarely produce one causal answer to *why* it happened or whether recovery met an explicit objective.
+
+Anvil puts that lab behind one zero-dependency executable. The same decision ledger drives the live dashboard and a deterministic resilience receipt containing the seed, normalized configuration hash, measured failover/recovery timings, assertions, and benchmark/ledger reconciliation.
+
+## Sixty-second quick start
+
+```powershell
+go build -trimpath -buildvcs=false -ldflags="-s -w -buildid=" -o anvil.exe .
+.\anvil.exe demo
+```
+
+The demo starts two loopback fixtures, the real Anvil proxy, and Anvil's own bounded benchmark client. It injects a fault, observes failover, restores the backend, observes recovery, and exits non-zero if any declared assertion fails. Nothing is downloaded and no external service is contacted.
+
+For machine-readable evidence:
+
+```powershell
+.\anvil.exe demo --json-out receipt.json
+```
+
+## What is inside
+
+```text
+client / benchmark
+       |
+bounded TCP admission and connection lifecycle
+       |
+custom HTTP/1.1 parser -> immutable route tree -> resilient proxy attempt loop
+                                                   |            |
+                                      backend selector     bounded pools
+                                                   |            |
+                                          loopback/upstream fixtures
+       |
+causal ledger + atomic metrics -> loopback-only JSON / SSE / dashboard
+       |
+deterministic resilience receipt and assertions
+```
+
+The data plane owns protocol and routing decisions. Observability receives bounded metadata after decisions and never controls backend selection. The experiment runner composes the same production components; it is not a simulated state-machine demo.
+
+## Concurrency model
+
+| Owner | Bound and lifecycle |
+|---|---|
+| TCP server | One goroutine per admitted connection, a hard global admission cap, joined handlers, bounded graceful drain, then forced socket closure |
+| Backend | Fixed in-flight semaphore and bounded idle-connection pool; every reservation has idempotent exactly-once release |
+| Health checker | At most one worker per backend; cancellation closes active sockets and `Stop` joins every worker |
+| Benchmark | Fixed worker set; each worker owns its connection and all workers join before results are returned |
+| SSE | Fixed subscriber count and queue sizes; non-blocking fan-out occurs without a registry mutex held, with explicit drop metrics |
+| Metrics/ledger | Atomics for counters and a fixed-capacity sequenced ring; callbacks and network I/O occur outside state locks |
+
+## Protocol and security boundary
+
+- HTTP/1.1 only, with an incremental parser over raw TCP; production code does not import `net/http` or `net/http/httputil`.
+- Ambiguous framing, conflicting lengths, unsupported transfer codings, obs-fold, bare LF, forbidden trailers, and forbidden 1xx/204 framing are rejected before reuse.
+- Client-controlled lines, headers, bodies, chunks, trailers, connections, requests, backends, workers, queues, ledgers, and time values have validated hard limits before allocation or conversion.
+- Inbound forwarding metadata and Anvil request IDs are replaced. Telemetry has no header, cookie, authorization, body, or backend-address field.
+- Automatic retry is limited to fully buffered `GET`/`HEAD`, a distinct eligible backend, pre-commit state, an attempt cap, and a total-time cap. Unsafe methods are never retried automatically.
+- The read-only administration listener requires an explicit loopback IP and is never registered on the public proxy listener.
+- TLS termination, HTTP/2, streaming proxy bodies, and production certification are deliberately outside the submitted scope.
 
 ## Requirements
 
 - Go 1.27.0
 - No third-party modules, services, or runtime executables
+- A supported C compiler only when running Go's optional race detector (`-race`); ordinary builds remain `CGO_ENABLED=0`
 
 ## Build
 
 From the repository root on Windows:
 
 ```powershell
-go build -trimpath -buildvcs=false -o anvil.exe .
+go build -trimpath -buildvcs=false -ldflags="-s -w -buildid=" -o anvil.exe .
 ```
 
 On Linux or macOS:
 
 ```sh
-go build -trimpath -buildvcs=false -o anvil .
+go build -trimpath -buildvcs=false -ldflags="-s -w -buildid=" -o anvil .
 ```
 
 Run the applicable checks:
@@ -28,11 +91,14 @@ Run the applicable checks:
 ```sh
 go fmt ./...
 go test ./...
+go test -race ./...
 go vet ./...
 go list -deps -f '{{if and (not .Standard) (not .Module.Main)}}{{.ImportPath}}{{end}}' ./...
 ```
 
 The final command excludes Anvil's own main module and must print no package paths.
+
+Run `.\verify-repro.ps1` from PowerShell to build twice in an isolated temporary directory and fail unless both SHA-256 hashes match.
 
 ## Command surface
 
@@ -228,6 +294,38 @@ Phase 8 changes behavior only where the audit found a correctness or resource-sa
 
 See `HARDENING.md` for exact commands, evidence, defect records, machine-local measurements, and remaining limitations.
 
+## Measured benchmarks
+
+Phase 9 submission measurements were captured on Windows/amd64 with Go 1.27.0 and an AMD Ryzen AI 7 350. They are microbenchmarks, not end-to-end capacity claims:
+
+```text
+go test -run '^$' -bench 'Benchmark(ReadHTTPRequest|BackendReserveRoundRobin)$' -benchmem -benchtime=2s -count=5 .
+```
+
+| Benchmark | Five-run timing | Memory | Allocations |
+|---|---:|---:|---:|
+| Parse a representative HTTP/1.1 request | 2.343–2.671 us/op (median 2.420 us/op) | 6,480 B/op | 30 allocs/op |
+| Round-robin reserve/release | 127.6–134.4 ns/op (median 131.9 ns/op) | 16 B/op | 1 alloc/op |
+
+Results are machine-local evidence. They do not imply Internet-scale throughput, exact production latency, or a zero-allocation parser.
+
+## Bonus claims
+
+| Bonus | Submission decision | Evidence |
+|---|---|---|
+| STDLIB Log | Claimed | `STDLIB.md` records only shipped substitutions and the exact direct-import inventory |
+| Package Killer | Claimed for the required circuit-breaker behavior, not API compatibility | `STDLIB.md` compares supported state, threshold, cooldown, probe, callback, health, and ledger semantics with `sony/gobreaker`; deterministic transition and race tests cover Anvil's behavior |
+| Reproducible Build | Claimed | `verify-repro.ps1` and `RELEASE_EVIDENCE.md` record the pinned command and matching SHA-256 hashes |
+| Single File | **Not claimed** | 6,212 production lines across 27 Go files are intentionally kept componentized; merging them during freeze would make the result harder to audit and explain |
+
+## Phase 9 submission freeze
+
+Phase 9 adds no proxy, protocol, routing, resilience, observability, fixture-mode, or benchmark feature. A release-gate regression exposed a receipt snapshot racing the fixture handler's final accounting; experiments now stop health workers, close the upstream pool, cancel and join every lab server, and only then capture ledger/fixture state. The assertion-failure CLI test also uses deterministic unavailable fixtures instead of assuming failover always exceeds 1 ms.
+
+The rest of Phase 9 finalizes the judge-first README, shipped-only STDLIB log, narrow Package Killer comparison, Track C metadata, dependency capture, reproducible-build verifier, exact demo runbook, benchmark environment, bonus decisions, and repository-hygiene evidence.
+
+See `RELEASE_EVIDENCE.md` for the exact final commands, results, matching artifact hashes, and three submitted-binary demo receipts.
+
 ## Competitive differentiator
 
 Anvil's competitive edge is causal resilience evidence: a bounded decision ledger explains why an upstream was selected or skipped, when health and circuit state changed, what the client observed, and how the system recovered. Deterministic experiments turn that ledger into a machine-readable and human-readable resilience receipt.
@@ -240,6 +338,7 @@ The mandatory design, protocol boundaries, test strategy, demo, and execution ga
 - `TEST_MATRIX.md`
 - `DEMO_SCRIPT.md`
 - `HARDENING.md`
+- `RELEASE_EVIDENCE.md`
 - `KICKOFF_EXECUTION_PLAN.md`
 
 ## Zero-dependency boundary
@@ -250,12 +349,12 @@ The mandatory design, protocol boundaries, test strategy, demo, and execution ga
 - The runtime does not shell out to tools or depend on network services.
 - The raw server and proxy core do not use `net/http`; tests may use it only as an independent compatibility oracle.
 
-See `STDLIB.md` for substitutions actually implemented through Phase 8. Planned substitutions remain in `STDLIB_DRAFT.md` and do not count as shipped work.
+See `STDLIB.md` for the final submission inventory. The former planning draft is retained only as a pointer to that evidence and contains no unshipped substitution claims.
 
 ## Current limitations
 
-Phase 8 hardens the offline experiment story but does not turn it into production certification. The general `proxy` command remains gated until JSON route/pool configuration exists. Experiment scenarios intentionally support GET load only and bounded in-memory receipts. Metrics are process-local and histogram percentiles are bucket estimates. SSE is intentionally lossy for slow subscribers, with replay limited to the retained ledger. Proxy bodies remain buffered and non-streaming; active health checks remain opt-in for arbitrary development backends without `/health`. A handler that ignores cancellation and a forcibly closed socket can outlive the force-close wait, in which case the server returns a lifecycle error instead of waiting forever.
+The submission does not claim production certification or the Single File bonus. The general `proxy` command remains gated until JSON route/pool configuration exists. Experiment scenarios intentionally support GET load only and bounded in-memory receipts. Metrics are process-local and histogram percentiles are bucket estimates. SSE is intentionally lossy for slow subscribers, with replay limited to the retained ledger. Proxy bodies remain buffered and non-streaming; active health checks remain opt-in for arbitrary development backends without `/health`. A handler that ignores cancellation and a forcibly closed socket can outlive the force-close wait, in which case the server returns a lifecycle error instead of waiting forever.
 
 ## License
 
-MIT. See `LICENSE`.
+MIT, an OSI-approved license. See `LICENSE` and the [OSI MIT license entry](https://opensource.org/license/mit).

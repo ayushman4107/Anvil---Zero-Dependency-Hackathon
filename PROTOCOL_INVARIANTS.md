@@ -178,6 +178,7 @@ Framing is determined once, before body consumption.
 9. Receipt request, failure-streak, failover, and recovery measurements come from ordered ledger events. Client result counters are reconciled explicitly rather than silently substituted.
 10. A failed assertion makes the experiment process exit non-zero. A receipt is controlled-lab evidence, not certification.
 11. Receipt and fixture JSON expose aliases and modes, never raw fixture or backend socket addresses.
+12. Health workers, idle upstreams, proxy/admin servers, and fixture servers are stopped and joined before ledger and fixture receipt snapshots; recorded fixture activity is zero and no request event can arrive after receipt capture.
 
 ## 16. Phase 8 hardening invariants
 

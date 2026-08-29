@@ -24,7 +24,7 @@ The main demo is offline and self-contained. Record a clean primary take and a b
 
 ### 0:00–0:25 — Hook
 
-**Visual:** Dashboard topology with three healthy backend nodes and live traffic.
+**Visual:** Dashboard topology with two healthy backend nodes and live traffic.
 
 **Narration:**
 
@@ -67,7 +67,7 @@ Do not spend more than 35 seconds touring code.
 
 **Narration:**
 
-“Three in-process services are receiving traffic through round robin or least-in-flight selection. The fixtures use the same HTTP engine, so the entire demonstration remains offline and self-contained.”
+“Two in-process fixtures are receiving traffic through round robin selection. The fixtures use the same HTTP engine, so the entire demonstration remains offline and self-contained.”
 
 Point out requests per second, p95 latency, backend state, and in-flight counts.
 
@@ -109,13 +109,14 @@ Show one healthy response and one Anvil-generated gateway error if the scenario 
 Call out:
 
 - Scenario/configuration hash.
+- Seed and resolved schedule.
 - Total requests.
 - Success rate.
-- Detection time.
-- Failover time.
 - Maximum consecutive failures.
-- p95 before and during failure.
-- Recovery confirmation time.
+- Observed failover duration.
+- Observed recovery duration.
+- Estimated benchmark p95.
+- Benchmark/ledger reconciliation.
 - Passed/failed assertions.
 
 **Narration:**
@@ -128,7 +129,7 @@ Call out:
 
 **Narration:**
 
-“The flagship Package Killer is the circuit-breaker behavior commonly imported from `sony/gobreaker`, implemented here with `sync`, atomics, and time. The STDLIB log documents every replacement, including routing, metrics, SSE, configuration, logging, retries, IDs, and testing.”
+“The flagship Package Killer is the circuit-breaker behavior commonly imported from `sony/gobreaker`, implemented here with `sync`, atomics, and time. We claim the breaker behavior Anvil needs, not API compatibility. The STDLIB log documents every shipped replacement, including routing, metrics, SSE, configuration, retries, IDs, and testing.”
 
 Do not claim full API compatibility unless implemented and tested.
 
@@ -140,16 +141,18 @@ Do not claim full API compatibility unless implemented and tested.
 
 “Anvil is intentionally HTTP/1.1-only and starts with bounded body buffering; those limits are documented. Within that scope it is testable, useful, explainable, and dependency-free. Break the backend. Keep the edge. Explain every decision.”
 
-## Phase 7 rehearsal commands
+## Final Phase 9 rehearsal commands
 
 ```text
 go version
 go list -deps -f '{{if and (not .Standard) (not .Module.Main)}}{{.ImportPath}}{{end}}' ./...
-go build -trimpath -buildvcs=false -o anvil.exe .
+go list -m all
+go build -trimpath -buildvcs=false -ldflags="-s -w -buildid=" -o anvil.exe .
 go test -run TestOfflineFailureRecoveryExperimentThreeConsecutiveRuns -v ./...
-./anvil demo --json-out receipt.json
-./anvil experiment --scenario examples/failure-recovery.json --json-out receipt.json
-./anvil bench --target 127.0.0.1:8080 --requests 1000 --concurrency 8
+.\verify-repro.ps1
+.\anvil.exe demo --json-out receipt.json
+.\anvil.exe experiment --scenario examples/failure-recovery.json --json-out receipt.json
+.\anvil.exe bench --target 127.0.0.1:8080 --requests 1000 --concurrency 8
 ```
 
 Never record commands that differ from README instructions.
@@ -180,9 +183,7 @@ If a fault timing varies:
 - Let the experiment finish.
 - Report measured timing rather than narrating a predetermined number.
 
-If the Single File bonus is dropped:
-
-- Remove the claim from the script; the product story is unchanged.
+The Single File bonus is not claimed. Do not describe the executable as a single source file; “one binary” is accurate.
 
 ## Claims requiring evidence
 
@@ -195,4 +196,4 @@ If the Single File bonus is dropped:
 | Explainable | Reason-coded events and Proxy-Status |
 | Reproducible | Two matching SHA-256 hashes |
 | Package Killer | Implemented semantics, tests, honest comparison |
-| Single file | Final shipped implementation layout |
+| Single file | Not claimed; 27 componentized production Go files are disclosed in README |

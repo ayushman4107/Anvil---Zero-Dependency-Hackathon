@@ -303,19 +303,21 @@ Never cut:
 
 ## Final submission checklist
 
-- [ ] Public repository.
-- [ ] OSI-approved license.
-- [ ] Go 1.27 stated.
-- [ ] `go.mod` has no `require`.
-- [ ] One-command build succeeds from a clean checkout.
-- [ ] Tests and race detector results recorded.
-- [ ] Dependency proof generated.
-- [ ] README includes use case, commands, architecture, concurrency, security, limits, and benchmarks.
-- [ ] STDLIB has at least ten real substitutions.
-- [ ] Package Killer comparison is precise.
-- [ ] Reproducible hashes match if claimed.
-- [ ] Single implementation file if claimed.
-- [ ] `.zero-dep.toml` identifies Track C and the one-line pitch.
+- [x] Public repository.
+- [x] OSI-approved license.
+- [x] Go 1.27 stated.
+- [x] `go.mod` has no `require`.
+- [x] One-command build succeeds from a clean checkout.
+- [x] Tests and race detector results recorded.
+- [x] Dependency proof generated.
+- [x] README includes use case, commands, architecture, concurrency, security, limits, and benchmarks.
+- [x] STDLIB has at least ten real substitutions.
+- [x] Package Killer comparison is precise.
+- [x] Reproducible hashes match for the claimed bonus.
+- [x] Single implementation file assessed and explicitly not claimed.
+- [x] `.zero-dep.toml` identifies Track C and the one-line pitch.
 - [ ] Five-minute video accessible.
-- [ ] Demo and receipt use the submitted binary.
-- [ ] No secret, absolute private path, temporary binary, or toolchain directory is committed.
+- [x] Demo and receipt use the submitted binary.
+- [x] No secret, absolute private path, temporary binary, or toolchain directory is committed.
+
+The only external submission action remaining after Phase 9 is recording, uploading, and checking accessibility of the five-minute video.
