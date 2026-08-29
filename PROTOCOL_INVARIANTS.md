@@ -179,7 +179,18 @@ Framing is determined once, before body consumption.
 10. A failed assertion makes the experiment process exit non-zero. A receipt is controlled-lab evidence, not certification.
 11. Receipt and fixture JSON expose aliases and modes, never raw fixture or backend socket addresses.
 
-## 16. Error mapping invariants
+## 16. Phase 8 hardening invariants
+
+1. Scenario bytes are capped before JSON decoding; schedule integers are range-checked before addition, multiplication, or duration conversion.
+2. Every allocation-bearing configured count has a hard maximum, including TCP admission, HTTP limits, backend pools, ledgers, and aggregate SSE queue capacity.
+3. A received 1xx or 204 response containing Content-Length or Transfer-Encoding is a protocol error; the upstream connection is discarded.
+4. Context-triggered connection close callbacks are joined before their owner returns or reuses related state.
+5. The TCP context watcher is joined before worker drain completes.
+6. Ledger sequence and live delivery order remain identical under concurrent publication, while observer fan-out and subscription signal closure occur outside mutexes.
+7. Slowloris clients, slow upstreams, and slow SSE consumers are isolated by independent admission, goroutine ownership, deadlines, and non-blocking observation.
+8. Status, `Proxy-Status`, ledger reason, failure metric, and public backend alias are tested as one mapping; private addresses never enter those outputs.
+
+## 17. Error mapping invariants
 
 | Condition | Downstream result before commit |
 |---|---|
@@ -212,7 +223,7 @@ Phase 5 emits the following RFC 9209 error types. `next-hop` is omitted when no 
 
 A forwarded response uses `received-status=<code>` plus the backend alias. Existing upstream `Proxy-Status` members are preserved before Anvil appends its own member.
 
-## 16. Unsupported-feature behavior
+## 18. Unsupported-feature behavior
 
 - HTTP/2 preface: reject safely; do not parse as HTTP/1.1.
 - `Upgrade`/WebSocket: reject explicitly and close.

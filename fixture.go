@@ -78,7 +78,7 @@ func profileFromScenarioStep(step scenarioStep) fixtureProfile {
 }
 
 func newFixtureBackend(spec fixtureSpec) (*fixtureBackend, error) {
-	if !validToken([]byte(spec.Alias)) {
+	if !validToken([]byte(spec.Alias)) || len(spec.Alias) > maxBackendAliasBytes {
 		return nil, fmt.Errorf("fixture alias must be an HTTP token")
 	}
 	if err := validateFixtureProfile(spec.InitialMode, spec.DelayMS, spec.FailureStatus); err != nil {

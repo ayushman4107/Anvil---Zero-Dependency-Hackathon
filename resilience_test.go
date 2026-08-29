@@ -431,20 +431,19 @@ func startPersistentUpstream(t *testing.T, keepAlive bool) (string, *atomic.Int6
 		t.Fatal(err)
 	}
 	var accepts atomic.Int64
-	var wait sync.WaitGroup
-	done := make(chan struct{})
-	wait.Add(1)
+	var connections sync.WaitGroup
+	acceptDone := make(chan struct{})
 	go func() {
-		defer wait.Done()
+		defer close(acceptDone)
 		for {
 			connection, acceptErr := listener.Accept()
 			if acceptErr != nil {
 				return
 			}
 			accepts.Add(1)
-			wait.Add(1)
+			connections.Add(1)
 			go func() {
-				defer wait.Done()
+				defer connections.Done()
 				defer connection.Close()
 				reader := bufio.NewReader(connection)
 				writer := bufio.NewWriter(connection)
@@ -470,10 +469,10 @@ func startPersistentUpstream(t *testing.T, keepAlive bool) (string, *atomic.Int6
 	var once sync.Once
 	stop := func() {
 		once.Do(func() {
-			close(done)
 			_ = listener.Close()
+			<-acceptDone
+			connections.Wait()
 		})
 	}
-	_ = done
 	return listener.Addr().String(), &accepts, stop
 }

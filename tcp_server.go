@@ -36,18 +36,18 @@ type tcpServerConfig struct {
 
 func (c tcpServerConfig) validate() error {
 	switch {
-	case c.MaxConnections <= 0:
-		return fmt.Errorf("max connections must be greater than zero")
-	case c.ReadTimeout <= 0:
-		return fmt.Errorf("read timeout must be greater than zero")
-	case c.WriteTimeout <= 0:
-		return fmt.Errorf("write timeout must be greater than zero")
-	case c.IdleTimeout <= 0:
-		return fmt.Errorf("idle timeout must be greater than zero")
-	case c.ShutdownTimeout <= 0:
-		return fmt.Errorf("shutdown timeout must be greater than zero")
-	case c.ForceCloseWait <= 0:
-		return fmt.Errorf("force-close wait must be greater than zero")
+	case c.MaxConnections <= 0 || c.MaxConnections > maxServerConnections:
+		return fmt.Errorf("max connections must be between 1 and %d", maxServerConnections)
+	case c.ReadTimeout <= 0 || c.ReadTimeout > maxConfiguredTimeout:
+		return fmt.Errorf("read timeout must be between zero and %s", maxConfiguredTimeout)
+	case c.WriteTimeout <= 0 || c.WriteTimeout > maxConfiguredTimeout:
+		return fmt.Errorf("write timeout must be between zero and %s", maxConfiguredTimeout)
+	case c.IdleTimeout <= 0 || c.IdleTimeout > maxConfiguredTimeout:
+		return fmt.Errorf("idle timeout must be between zero and %s", maxConfiguredTimeout)
+	case c.ShutdownTimeout <= 0 || c.ShutdownTimeout > maxConfiguredTimeout:
+		return fmt.Errorf("shutdown timeout must be between zero and %s", maxConfiguredTimeout)
+	case c.ForceCloseWait <= 0 || c.ForceCloseWait > maxConfiguredTimeout:
+		return fmt.Errorf("force-close wait must be between zero and %s", maxConfiguredTimeout)
 	default:
 		return nil
 	}
@@ -131,12 +131,14 @@ func (s *tcpServer) Serve(ctx context.Context) error {
 		return errServerAlreadyStarted
 	}
 
+	stopWatcher := make(chan struct{})
 	watcherDone := make(chan struct{})
 	go func() {
+		defer close(watcherDone)
 		select {
 		case <-ctx.Done():
 			s.beginShutdown()
-		case <-watcherDone:
+		case <-stopWatcher:
 		}
 	}()
 
@@ -159,7 +161,8 @@ func (s *tcpServer) Serve(ctx context.Context) error {
 		}
 	}
 
-	close(watcherDone)
+	close(stopWatcher)
+	<-watcherDone
 	drainErr := s.drain()
 	s.state.Store(serverStateClosed)
 	s.cancelHandlers()

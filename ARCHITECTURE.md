@@ -197,7 +197,7 @@ Numeric observations
 
 Phase 6 event types are request start, backend selection, attempt failure, retry scheduling, request completion, circuit transition, and health transition. It stores no request/response bodies, cookies, authorization values, or raw private backend addresses; those fields do not exist in the event type.
 
-One short publisher mutex preserves the same monotonic ordering in the ring and subscriber fan-out. Work under it is restricted to a ring copy and non-blocking channel selects—never encoding or I/O. A full subscriber queue increments an atomic drop counter rather than blocking traffic. Subscription is registered before taking its replay snapshot; duplicate live/replay IDs are suppressed, avoiding a subscribe-time gap.
+The ledger assigns a sequence under its short memory-only mutex. A condition-based delivery turn preserves the same order for live fan-out, but releases its mutex before subscriber queues are touched. The subscriber registry is likewise snapshotted before non-blocking sends. A full subscriber queue increments an atomic drop counter rather than blocking traffic. Subscription is registered before taking its replay snapshot; duplicate live/replay IDs are suppressed, avoiding a subscribe-time gap.
 
 ### 3.10 Metrics
 
@@ -258,8 +258,8 @@ It enforces fixed worker, request, pacing, duration, and timeout bounds. Each wo
 | Metrics counters | Atomics |
 | Latency buckets | Atomic counters |
 | Ledger sequence/ring | Short mutex; copy only, no encoding or I/O |
-| Ledger publication order | Short publisher mutex around append and non-blocking fan-out |
-| SSE subscriber registry | RW mutex; fixed maximum subscriber count |
+| Ledger publication order | Sequence condition establishes one delivery turn at a time; the condition mutex is released before fan-out |
+| SSE subscriber registry | RW mutex used only to snapshot bounded queue references; fan-out and lifecycle signal closure occur after unlock |
 | SSE subscriber queue | Fixed-capacity channel per subscriber; full queues increment drops |
 | Fixture behavior | Atomic snapshot |
 | Resolved scenario schedule | Runner goroutine; immutable after seeded resolution |
@@ -268,6 +268,8 @@ It enforces fixed worker, request, pacing, duration, and timeout bounds. Each wo
 | Benchmark status/error maps | Short result-only mutex; counters and latency buckets are atomic |
 
 No lock may be held while dialing, reading, writing, sleeping, or publishing to an observer.
+
+Context-triggered connection closers expose a stop-and-join function. Proxy attempts, active probes, and benchmark workers invoke that join before releasing connection ownership. The TCP server likewise joins its context watcher before entering worker drain. A non-cooperative custom handler remains bounded by shutdown plus force-close waits and is reported as a lifecycle error.
 
 ## 5. Error taxonomy
 
@@ -306,7 +308,7 @@ Each proxy failure maps to an HTTP status, a `Proxy-Status` error token where de
 - Forwarding headers are trusted only from explicitly configured trusted proxies.
 - Header values are validated before serialization to prevent CR/LF injection.
 - Bodies and sensitive headers never enter the ledger.
-- All client-controlled lengths are checked before allocation.
+- All client-controlled and allocation-bearing configured lengths are checked against hard individual and aggregate caps before allocation or duration conversion.
 - Slow clients and upstreams are bounded by deadlines.
 - Unknown end-to-end headers are preserved; hop-by-hop headers are removed.
 

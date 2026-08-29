@@ -33,6 +33,10 @@ func FuzzReadHTTPResponse(f *testing.F) {
 		[]byte("HTTP/1.1 204 No Content\r\n\r\n"),
 		[]byte("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"),
 		[]byte("HTTP/1.1 2O0 Broken\r\n\r\n"),
+		[]byte("HTTP/1.1 100 Continue\r\nContent-Length: 1\r\n\r\n"),
+		[]byte("HTTP/1.1 100 Continue\r\nTransfer-Encoding: chunked\r\n\r\n"),
+		[]byte("HTTP/1.1 204 No Content\r\nContent-Length: 1\r\n\r\n"),
+		[]byte("HTTP/1.1 204 No Content\r\nTransfer-Encoding: chunked\r\n\r\n"),
 	}
 	for _, seed := range seeds {
 		f.Add(seed)
@@ -44,6 +48,22 @@ func FuzzReadHTTPResponse(f *testing.F) {
 		}
 		limits := fuzzHTTPLimits()
 		_, _ = readHTTPResponse(bufio.NewReaderSize(bytes.NewReader(data), 16), limits, "GET")
+	})
+}
+
+func FuzzParseScenario(f *testing.F) {
+	valid, err := defaultDemoScenario().canonicalJSON()
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(valid)
+	f.Add([]byte(`{"version":1,"duration_ms":6000,"steps":[{"at_ms":9223372036854775807,"jitter_ms":1}]}`))
+	f.Add([]byte(`{"version":1,"unknown":true}`))
+	f.Fuzz(func(t *testing.T, data []byte) {
+		if len(data) > maxScenarioBytes+1 {
+			t.Skip()
+		}
+		_, _ = parseScenario(data)
 	})
 }
 

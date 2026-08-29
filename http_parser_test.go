@@ -199,7 +199,7 @@ func TestReadHTTPResponseFraming(t *testing.T) {
 		{name: "chunked", method: "GET", raw: "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n3\r\nabc\r\n0\r\nX-End: yes\r\n\r\n", wantMode: bodyModeChunked, wantBody: "abc", wantTrailer: "yes", keepAlive: true},
 		{name: "close delimited", method: "GET", raw: "HTTP/1.1 200 OK\r\n\r\nbody", wantMode: bodyModeCloseDelimited, wantBody: "body", keepAlive: false},
 		{name: "HEAD", method: "HEAD", raw: "HTTP/1.1 200 OK\r\nContent-Length: 99\r\n\r\n", wantMode: bodyModeNone, keepAlive: true},
-		{name: "204", method: "GET", raw: "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n", wantMode: bodyModeNone, keepAlive: true},
+		{name: "204", method: "GET", raw: "HTTP/1.1 204 No Content\r\n\r\n", wantMode: bodyModeNone, keepAlive: true},
 		{name: "304", method: "GET", raw: "HTTP/1.1 304 Not Modified\r\nContent-Length: 10\r\n\r\n", wantMode: bodyModeNone, keepAlive: true},
 	}
 	for _, test := range tests {

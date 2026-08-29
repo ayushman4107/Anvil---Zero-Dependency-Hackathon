@@ -25,8 +25,11 @@ const (
 )
 
 func (c backendConfig) validate() error {
-	if !validToken([]byte(c.Alias)) {
+	if !validToken([]byte(c.Alias)) || len(c.Alias) > maxBackendAliasBytes {
 		return fmt.Errorf("backend alias %q must be an HTTP token", c.Alias)
+	}
+	if len(c.Address) > maxBackendAddressBytes {
+		return fmt.Errorf("backend %q address exceeds %d bytes", c.Alias, maxBackendAddressBytes)
 	}
 	host, portText, err := net.SplitHostPort(c.Address)
 	if err != nil || host == "" {
@@ -40,16 +43,16 @@ func (c backendConfig) validate() error {
 	if authority == "" {
 		authority = c.Address
 	}
-	if !validHost(authority) {
+	if len(authority) > maxBackendAddressBytes || !validHost(authority) {
 		return fmt.Errorf("backend %q authority %q is invalid", c.Alias, authority)
 	}
-	if c.MaxInFlight <= 0 {
-		return fmt.Errorf("backend %q maximum in-flight requests must be greater than zero", c.Alias)
+	if c.MaxInFlight <= 0 || c.MaxInFlight > maxBackendInFlight {
+		return fmt.Errorf("backend %q maximum in-flight requests must be between 1 and %d", c.Alias, maxBackendInFlight)
 	}
-	if c.MaxIdleConnections < 0 || c.IdleTimeout <= 0 {
-		return fmt.Errorf("backend %q idle connection limit must not be negative and idle timeout must be positive", c.Alias)
+	if c.MaxIdleConnections < 0 || c.MaxIdleConnections > maxBackendIdleConnections || c.IdleTimeout <= 0 || c.IdleTimeout > maxConfiguredTimeout {
+		return fmt.Errorf("backend %q idle connection settings are outside documented bounds", c.Alias)
 	}
-	if c.HealthPath == "" || c.HealthPath[0] != '/' || strings.ContainsAny(c.HealthPath, "\r\n#") {
+	if c.HealthPath == "" || len(c.HealthPath) > maxHealthPathBytes || c.HealthPath[0] != '/' || strings.ContainsAny(c.HealthPath, "\r\n#") {
 		return fmt.Errorf("backend %q health path must be a safe origin-form path", c.Alias)
 	}
 	return nil
@@ -115,10 +118,13 @@ func (c proxyConfig) validate() error {
 	if c.MaxAttempts <= 0 || c.RetryTimeout <= 0 {
 		return fmt.Errorf("proxy maximum attempts and retry timeout must be greater than zero")
 	}
+	if c.MaxAttempts > maxBackendPoolSize || c.RetryTimeout > maxConfiguredTimeout || c.DialTimeout > maxConfiguredTimeout || c.ReadTimeout > maxConfiguredTimeout || c.WriteTimeout > maxConfiguredTimeout {
+		return fmt.Errorf("proxy attempts or timeouts exceed documented bounds")
+	}
 	if err := c.Limits.validate(); err != nil {
 		return err
 	}
-	if !validToken([]byte(c.ViaName)) {
+	if !validToken([]byte(c.ViaName)) || len(c.ViaName) > maxBackendAliasBytes {
 		return fmt.Errorf("Via pseudonym %q must be an HTTP token", c.ViaName)
 	}
 	if c.NewRequestID == nil {
@@ -130,7 +136,7 @@ func (c proxyConfig) validate() error {
 	if c.Now == nil {
 		return fmt.Errorf("proxy clock is required")
 	}
-	if !validToken([]byte(c.RouteAlias)) {
+	if !validToken([]byte(c.RouteAlias)) || len(c.RouteAlias) > maxBackendAliasBytes {
 		return fmt.Errorf("route alias %q must be an HTTP token", c.RouteAlias)
 	}
 	for status := range c.RetryStatuses {
@@ -349,12 +355,8 @@ func executeProxyAttempt(ctx context.Context, request *httpRequest, backend *pro
 			_ = connection.Close()
 		}
 	}()
-	stopCancellation := context.AfterFunc(ctx, func() { _ = connection.Close() })
-	defer func() {
-		if !stopCancellation() {
-			_ = connection.Close()
-		}
-	}()
+	stopCancellation := closeOnContextDone(ctx, connection)
+	defer stopCancellation()
 
 	upstreamRequest := buildUpstreamRequest(request, backend.config.Authority, requestID, config)
 	if err := connection.SetWriteDeadline(time.Now().Add(config.WriteTimeout)); err != nil {

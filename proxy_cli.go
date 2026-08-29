@@ -23,6 +23,9 @@ func (v *backendFlagValues) String() string {
 }
 
 func (v *backendFlagValues) Set(value string) error {
+	if len(*v) >= maxBackendPoolSize {
+		return fmt.Errorf("at most %d upstreams are allowed", maxBackendPoolSize)
+	}
 	separator := strings.IndexByte(value, '=')
 	if separator <= 0 || separator == len(value)-1 {
 		return fmt.Errorf("upstream must use alias=host:port")
@@ -120,7 +123,7 @@ func runDevProxy(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%s dev-proxy: invalid admin listener: %v\n", programName, err)
 		return exitUsage
 	}
-	if backendMaxInFlight <= 0 || backendMaxIdle <= 0 || backendIdleTimeoutMS <= 0 || dialTimeoutMS <= 0 || upstreamReadTimeoutMS <= 0 || upstreamWriteTimeoutMS <= 0 || retryTimeoutMS <= 0 || passiveIntervalMS <= 0 || circuitCooldownMS <= 0 || healthIntervalMS <= 0 || healthTimeoutMS <= 0 || sseHeartbeatMS <= 0 || observabilityCfg.LedgerCapacity <= 0 || observabilityCfg.MaxSubscribers <= 0 || observabilityCfg.SubscriberQueue <= 0 {
+	if len(upstreams) > maxBackendPoolSize || backendMaxInFlight <= 0 || backendMaxInFlight > maxBackendInFlight || backendMaxIdle <= 0 || backendMaxIdle > maxBackendIdleConnections || !validMilliseconds(backendIdleTimeoutMS, maxConfiguredTimeout) || !validMilliseconds(dialTimeoutMS, maxConfiguredTimeout) || !validMilliseconds(upstreamReadTimeoutMS, maxConfiguredTimeout) || !validMilliseconds(upstreamWriteTimeoutMS, maxConfiguredTimeout) || !validMilliseconds(retryTimeoutMS, maxConfiguredTimeout) || !validMilliseconds(passiveIntervalMS, maxConfiguredTimeout) || !validMilliseconds(circuitCooldownMS, maxConfiguredTimeout) || !validMilliseconds(healthIntervalMS, maxConfiguredTimeout) || !validMilliseconds(healthTimeoutMS, maxConfiguredTimeout) || !validMilliseconds(sseHeartbeatMS, maxConfiguredTimeout/4) || observabilityCfg.LedgerCapacity <= 0 || observabilityCfg.LedgerCapacity > maxLedgerCapacity || observabilityCfg.MaxSubscribers <= 0 || observabilityCfg.MaxSubscribers > maxSSESubscribers || observabilityCfg.SubscriberQueue <= 0 || observabilityCfg.SubscriberQueue > maxSubscriberQueue || observabilityCfg.MaxSubscribers > maxQueuedSSEEvents/observabilityCfg.SubscriberQueue {
 		fmt.Fprintf(stderr, "%s dev-proxy: backend limits and upstream timeouts must be greater than zero\n", programName)
 		return exitUsage
 	}

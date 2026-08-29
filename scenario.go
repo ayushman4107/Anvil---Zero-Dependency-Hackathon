@@ -15,11 +15,13 @@ import (
 
 const (
 	scenarioVersion       = 1
+	maxScenarioBytes      = 1 << 20
 	maxScenarioFixtures   = 8
 	maxScenarioSteps      = 128
 	maxExperimentWorkers  = 64
 	maxExperimentRequests = 100_000
 	maxExperimentDuration = 10 * time.Minute
+	maxScenarioPathBytes  = 4 * 1024
 )
 
 type scenario struct {
@@ -111,6 +113,9 @@ func defaultDemoScenario() scenario {
 }
 
 func parseScenario(data []byte) (scenario, error) {
+	if len(data) > maxScenarioBytes {
+		return scenario{}, fmt.Errorf("scenario exceeds %d-byte limit", maxScenarioBytes)
+	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var value scenario
@@ -137,8 +142,8 @@ func (s scenario) validate() error {
 	if strings.TrimSpace(s.Name) == "" || len(s.Name) > 128 {
 		return fmt.Errorf("scenario name must contain 1 to 128 characters")
 	}
-	duration := time.Duration(s.DurationMS) * time.Millisecond
-	if duration < 100*time.Millisecond || duration > maxExperimentDuration {
+	maximumDurationMS := int(maxExperimentDuration / time.Millisecond)
+	if s.DurationMS < 100 || s.DurationMS > maximumDurationMS {
 		return fmt.Errorf("scenario duration must be between 100ms and %s", maxExperimentDuration)
 	}
 	if len(s.Fixtures) < 2 || len(s.Fixtures) > maxScenarioFixtures {
@@ -146,7 +151,7 @@ func (s scenario) validate() error {
 	}
 	aliases := make(map[string]struct{}, len(s.Fixtures))
 	for index, fixture := range s.Fixtures {
-		if !validToken([]byte(fixture.Alias)) {
+		if !validToken([]byte(fixture.Alias)) || len(fixture.Alias) > maxBackendAliasBytes {
 			return fmt.Errorf("fixture %d alias must be an HTTP token", index)
 		}
 		key := strings.ToLower(fixture.Alias)
@@ -165,7 +170,7 @@ func (s scenario) validate() error {
 		return fmt.Errorf("scenario requires 1 to %d steps", maxScenarioSteps)
 	}
 	for index, step := range s.Steps {
-		if step.AtMS < 0 || step.JitterMS < 0 || step.JitterMS > step.AtMS || step.AtMS+step.JitterMS >= s.DurationMS {
+		if step.AtMS < 0 || step.AtMS >= s.DurationMS || step.JitterMS < 0 || step.JitterMS > step.AtMS || step.JitterMS >= s.DurationMS-step.AtMS {
 			return fmt.Errorf("step %d must resolve within the scenario duration", index)
 		}
 		if _, exists := aliases[strings.ToLower(step.Fixture)]; !exists {
@@ -217,8 +222,8 @@ func (s scenario) validate() error {
 		return fmt.Errorf("assertion thresholds are invalid")
 	}
 	worstEvents := s.requiredLedgerCapacity()
-	if s.LedgerCapacity < worstEvents || s.LedgerCapacity > 1_000_000 {
-		return fmt.Errorf("ledger_capacity must be at least %d and at most 1000000", worstEvents)
+	if s.LedgerCapacity < worstEvents || s.LedgerCapacity > maxLedgerCapacity {
+		return fmt.Errorf("ledger_capacity must be at least %d and at most %d", worstEvents, maxLedgerCapacity)
 	}
 	return nil
 }
@@ -234,7 +239,7 @@ func (s scenario) requiredLedgerCapacity() int {
 }
 
 func validScenarioPath(path string) bool {
-	return path != "" && path[0] == '/' && !strings.ContainsAny(path, "\r\n# ")
+	return path != "" && len(path) <= maxScenarioPathBytes && path[0] == '/' && !strings.ContainsAny(path, "\r\n# ")
 }
 
 func (s scenario) canonicalJSON() ([]byte, error) {

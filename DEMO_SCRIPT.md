@@ -154,6 +154,18 @@ go test -run TestOfflineFailureRecoveryExperimentThreeConsecutiveRuns -v ./...
 
 Never record commands that differ from README instructions.
 
+## Phase 8 hardening evidence
+
+Before recording the final take, run the exact test/race/fuzz/benchmark commands in `HARDENING.md`. For the compatibility proof, start local `dev-http` and `dev-proxy` processes, then show:
+
+```text
+curl --http1.1 http://127.0.0.1:8080/hello/anvil
+curl --http1.1 -X POST --data-binary fixed-body http://127.0.0.1:8080/echo
+curl --http1.1 -X POST -H "Transfer-Encoding: chunked" --data-binary chunked-body http://127.0.0.1:8080/echo
+```
+
+Open the loopback dashboard in a real browser and verify live metrics, backend topology, the causal timeline, and an empty error console. Do not quote machine-local benchmark values as portable guarantees.
+
 ## Backup plan
 
 If the live browser rendering fails:

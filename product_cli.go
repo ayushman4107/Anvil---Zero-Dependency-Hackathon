@@ -38,6 +38,10 @@ func runDemo(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%s demo: unexpected arguments: %v\n", programName, flags.Args())
 		return exitUsage
 	}
+	if value.DurationMS < 100 || value.DurationMS > int(maxExperimentDuration/time.Millisecond) || value.Load.Requests <= 0 || value.Load.Requests > maxExperimentRequests || value.Load.RatePerSecond < 0 || value.Load.RatePerSecond > 10_000 {
+		fmt.Fprintf(stderr, "%s demo: duration, requests, or rate is outside the documented bounds\n", programName)
+		return exitUsage
+	}
 	if value.DurationMS != originalDuration && value.DurationMS > 0 {
 		for index := range value.Steps {
 			value.Steps[index].AtMS = max(value.Steps[index].AtMS*value.DurationMS/originalDuration, 1)
@@ -70,7 +74,7 @@ func runExperimentCommand(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%s experiment: --scenario is required and positional arguments are not accepted\n", programName)
 		return exitUsage
 	}
-	data, err := os.ReadFile(scenarioPath)
+	data, err := readBoundedFile(scenarioPath, maxScenarioBytes)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s experiment: read scenario: %v\n", programName, err)
 		return exitFailure
@@ -154,6 +158,10 @@ func runBenchCommand(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%s bench: --target is required and positional arguments are not accepted\n", programName)
 		return exitUsage
 	}
+	if !validMilliseconds(durationMS, maxExperimentDuration) || !validMilliseconds(timeoutMS, time.Minute) {
+		fmt.Fprintf(stderr, "%s bench: duration or timeout is outside the documented bounds\n", programName)
+		return exitUsage
+	}
 	config.Duration = time.Duration(durationMS) * time.Millisecond
 	config.Timeout = time.Duration(timeoutMS) * time.Millisecond
 	config.setDefaults()
@@ -175,4 +183,23 @@ func runBenchCommand(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "Anvil benchmark: completed=%d offered=%d throughput=%.2f req/s p50=%.3fms p95=%.3fms p99=%.3fms new_connections=%d reused_requests=%d peak_in_flight=%d\n", result.Completed, result.OfferedRequests, result.RequestsPerSec, result.Latency.P50MS, result.Latency.P95MS, result.Latency.P99MS, result.NewConnections, result.ReusedRequests, result.PeakInFlight)
 	}
 	return exitOK
+}
+
+func readBoundedFile(path string, maximum int) ([]byte, error) {
+	if maximum <= 0 {
+		return nil, fmt.Errorf("file byte limit must be greater than zero")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, int64(maximum)+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maximum {
+		return nil, fmt.Errorf("file exceeds %d-byte limit", maximum)
+	}
+	return data, nil
 }

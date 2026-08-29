@@ -73,6 +73,42 @@ func TestSSEHubQueuesAreBoundedAndPublicationNeverBlocks(t *testing.T) {
 	}
 }
 
+func TestConcurrentObserverDeliveryPreservesLedgerSequence(t *testing.T) {
+	config := defaultObservabilityConfig()
+	config.LedgerCapacity = 256
+	config.SubscriberQueue = 256
+	observer, err := newObservability(config, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer observer.close()
+	subscription, err := observer.hub.subscribe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer observer.hub.unsubscribe(subscription.ID)
+	const publications = 128
+	var wait sync.WaitGroup
+	for range publications {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			observer.publish(decisionEvent{Type: eventRequestStarted})
+		}()
+	}
+	wait.Wait()
+	for want := uint64(1); want <= publications; want++ {
+		select {
+		case event := <-subscription.Events:
+			if event.Sequence != want {
+				t.Fatalf("delivered sequence = %d, want %d", event.Sequence, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for sequence %d", want)
+		}
+	}
+}
+
 func TestLatencyHistogramProducesFixedBucketEstimates(t *testing.T) {
 	histogram := &latencyHistogram{}
 	for _, duration := range []time.Duration{50 * time.Microsecond, 900 * time.Microsecond, 20 * time.Millisecond, 80 * time.Millisecond, 2 * time.Second} {

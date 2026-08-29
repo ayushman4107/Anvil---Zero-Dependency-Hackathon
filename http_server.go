@@ -21,8 +21,8 @@ func (c httpServerConfig) validate() error {
 	if err := c.Limits.validate(); err != nil {
 		return err
 	}
-	if c.MaxRequestsPerConnection <= 0 {
-		return fmt.Errorf("maximum requests per connection must be greater than zero")
+	if c.MaxRequestsPerConnection <= 0 || c.MaxRequestsPerConnection > maxRequestsPerClient {
+		return fmt.Errorf("maximum requests per connection must be between 1 and %d", maxRequestsPerClient)
 	}
 	return nil
 }

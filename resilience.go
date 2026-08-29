@@ -19,6 +19,13 @@ const (
 	defaultHalfOpenSuccesses       = 1
 	defaultActiveFailureThreshold  = 2
 	defaultActiveSuccessThreshold  = 2
+	maxBackendPoolSize             = 256
+	maxBackendInFlight             = 65_536
+	maxBackendIdleConnections      = 4_096
+	maxBackendAliasBytes           = 64
+	maxBackendAddressBytes         = 512
+	maxHealthPathBytes             = 8 * 1024
+	maxResilienceThreshold         = 1_000_000
 )
 
 type selectorPolicy string
@@ -88,13 +95,13 @@ func (c resilienceConfig) validate() error {
 	default:
 		return fmt.Errorf("selector must be %q or %q", selectorRoundRobin, selectorLeastInFlight)
 	}
-	if c.PassiveFailureThreshold <= 0 || c.PassiveInterval <= 0 || c.CircuitCooldown <= 0 {
+	if c.PassiveFailureThreshold <= 0 || c.PassiveFailureThreshold > maxResilienceThreshold || c.PassiveInterval <= 0 || c.PassiveInterval > maxConfiguredTimeout || c.CircuitCooldown <= 0 || c.CircuitCooldown > maxConfiguredTimeout {
 		return fmt.Errorf("passive threshold, interval, and circuit cooldown must be greater than zero")
 	}
-	if c.HalfOpenMaxRequests <= 0 || c.HalfOpenSuccesses <= 0 || c.HalfOpenSuccesses > c.HalfOpenMaxRequests {
+	if c.HalfOpenMaxRequests <= 0 || c.HalfOpenMaxRequests > maxBackendInFlight || c.HalfOpenSuccesses <= 0 || c.HalfOpenSuccesses > c.HalfOpenMaxRequests {
 		return fmt.Errorf("half-open successes must be positive and no greater than the half-open request limit")
 	}
-	if c.ActiveFailureThreshold <= 0 || c.ActiveSuccessThreshold <= 0 {
+	if c.ActiveFailureThreshold <= 0 || c.ActiveFailureThreshold > maxResilienceThreshold || c.ActiveSuccessThreshold <= 0 || c.ActiveSuccessThreshold > maxResilienceThreshold {
 		return fmt.Errorf("active health thresholds must be greater than zero")
 	}
 	if c.SlowLatencyThreshold < 0 {
@@ -212,8 +219,8 @@ func newBackendPool(configs []backendConfig) (*backendPool, error) {
 }
 
 func newBackendPoolWithConfig(configs []backendConfig, resilience resilienceConfig) (*backendPool, error) {
-	if len(configs) == 0 {
-		return nil, fmt.Errorf("backend pool requires at least one backend")
+	if len(configs) == 0 || len(configs) > maxBackendPoolSize {
+		return nil, fmt.Errorf("backend pool requires between 1 and %d backends", maxBackendPoolSize)
 	}
 	resilience.setDefaults()
 	if err := resilience.validate(); err != nil {
@@ -252,9 +259,19 @@ func (p *backendPool) reserveNextExcluding(excluded map[string]struct{}) (*backe
 		return nil, &proxyError{Kind: proxyNoBackend}
 	}
 	now := p.resilience.Now()
+	if p.resilience.Selector == selectorRoundRobin {
+		count := len(p.backends)
+		start := int((p.sequence.Add(1) - 1) % uint64(count))
+		return p.reserveInOrder(excluded, now, func(offset int) int { return (start + offset) % count })
+	}
 	order := p.candidateOrder()
+	return p.reserveInOrder(excluded, now, func(offset int) int { return order[offset] })
+}
+
+func (p *backendPool) reserveInOrder(excluded map[string]struct{}, now time.Time, indexAt func(int) int) (*backendReservation, error) {
 	eligible := false
-	for _, index := range order {
+	for offset := range len(p.backends) {
+		index := indexAt(offset)
 		backend := p.backends[index]
 		if _, skip := excluded[strings.ToLower(backend.config.Alias)]; skip {
 			continue

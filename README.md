@@ -2,7 +2,7 @@
 
 Anvil is an explainable reverse proxy and resilience-testing lab built for Track C of the Zero Dependency Hackathon. Its core promise is to make every routing, failover, circuit-breaker, and recovery decision observable and reproducible from one offline-capable binary.
 
-> Phase 7 status: Anvil now runs a complete offline failure/recovery lab: in-process fault fixtures, deterministic strict-JSON scenarios, bounded custom load, live causal observability, ledger-derived assertions, and human/JSON resilience receipts.
+> Phase 8 status: Anvil's complete offline failure/recovery lab is now protocol- and concurrency-hardened with allocation caps, overflow-safe scenarios, strict no-content framing, joined cancellation callbacks, ordered lock-safe observer delivery, expanded fuzzing, and real curl/browser compatibility evidence.
 
 ## Requirements
 
@@ -131,6 +131,7 @@ The codec operates on `bufio.Reader` and `io.Writer` boundaries without `net/htt
 - Rejection of Transfer-Encoding plus Content-Length, conflicting lengths, unsupported codings, obs-fold, bare LF, control bytes, and forbidden trailer fields.
 - Fixed and chunked request/response serialization with CRLF-injection prevention and short-write handling.
 - Correct body suppression for HEAD, informational, 204, and 304 responses.
+- Rejection of forbidden Content-Length or Transfer-Encoding on 1xx and 204 upstream responses.
 - Fixed, chunked, and close-delimited upstream response parsing.
 - Table-driven protocol cases, arbitrary-fragment readers, deterministic mutation coverage, and native Go fuzz targets.
 
@@ -213,6 +214,20 @@ The product story is now self-contained and evidence-driven:
 - Receipts derive request success, failure streak, failover, and recovery from sequenced ledger events. Benchmark/ledger reconciliation is itself an assertion rather than an assumed property.
 - The built-in `demo` and checked-in `examples/failure-recovery.json` execute the same canonical scenario. Three consecutive offline recovery runs are part of the automated suite.
 
+## Phase 8 protocol and concurrency hardening
+
+Phase 8 changes behavior only where the audit found a correctness or resource-safety defect:
+
+- Scenario files are capped at 1 MiB, and schedule validation uses overflow-safe integer comparisons before duration conversion or jitter resolution.
+- Downstream connections, per-connection requests, backend counts/admission/idle pools, HTTP limits, ledger entries, SSE subscribers/queues, scenario load, and CLI time values are bounded before allocation or conversion.
+- Upstream 1xx and 204 responses carrying forbidden framing are rejected and discarded instead of entering the persistent pool.
+- Context-triggered socket closers and the TCP shutdown watcher have explicit join paths.
+- SSE registry locks are released before fan-out. Concurrent publishers retain exact ledger/live sequence through an ordering barrier that performs no observer send while locked.
+- Native fuzzing now covers request, response, chunk-size, and strict-scenario parsers. Dedicated tests exercise an actual HTTP Slowloris, slow-upstream isolation, cancellation joining, mapping/privacy reconciliation, and allocation-scale rejection.
+- Measured round-robin selection dropped from two allocations/40 bytes to one allocation/16 bytes per reserve/release operation on the project machine; no unmeasured parser rewrite was attempted.
+
+See `HARDENING.md` for exact commands, evidence, defect records, machine-local measurements, and remaining limitations.
+
 ## Competitive differentiator
 
 Anvil's competitive edge is causal resilience evidence: a bounded decision ledger explains why an upstream was selected or skipped, when health and circuit state changed, what the client observed, and how the system recovered. Deterministic experiments turn that ledger into a machine-readable and human-readable resilience receipt.
@@ -224,6 +239,7 @@ The mandatory design, protocol boundaries, test strategy, demo, and execution ga
 - `PROTOCOL_INVARIANTS.md`
 - `TEST_MATRIX.md`
 - `DEMO_SCRIPT.md`
+- `HARDENING.md`
 - `KICKOFF_EXECUTION_PLAN.md`
 
 ## Zero-dependency boundary
@@ -234,11 +250,11 @@ The mandatory design, protocol boundaries, test strategy, demo, and execution ga
 - The runtime does not shell out to tools or depend on network services.
 - The raw server and proxy core do not use `net/http`; tests may use it only as an independent compatibility oracle.
 
-See `STDLIB.md` for substitutions actually implemented through Phase 7. Planned substitutions remain in `STDLIB_DRAFT.md` and do not count as shipped work.
+See `STDLIB.md` for substitutions actually implemented through Phase 8. Planned substitutions remain in `STDLIB_DRAFT.md` and do not count as shipped work.
 
 ## Current limitations
 
-Phase 7 completes the offline experiment story, but the general `proxy` command remains gated until JSON route/pool configuration exists. Experiment scenarios intentionally support GET load only and bounded in-memory receipts; they are evidence from a controlled lab, not production certification. Metrics are process-local and histogram percentiles are bucket estimates. SSE is intentionally lossy for slow subscribers, with replay limited to the retained ledger. Proxy bodies remain buffered and non-streaming; active health checks remain opt-in for arbitrary development backends without `/health`.
+Phase 8 hardens the offline experiment story but does not turn it into production certification. The general `proxy` command remains gated until JSON route/pool configuration exists. Experiment scenarios intentionally support GET load only and bounded in-memory receipts. Metrics are process-local and histogram percentiles are bucket estimates. SSE is intentionally lossy for slow subscribers, with replay limited to the retained ledger. Proxy bodies remain buffered and non-streaming; active health checks remain opt-in for arbitrary development backends without `/health`. A handler that ignores cancellation and a forcibly closed socket can outlive the force-close wait, in which case the server returns a lifecycle error instead of waiting forever.
 
 ## License
 

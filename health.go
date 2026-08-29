@@ -56,6 +56,9 @@ func newActiveHealthChecker(pool *backendPool, proxyConfig proxyConfig, config a
 }
 
 func (h *activeHealthChecker) Start(parent context.Context) error {
+	if parent == nil {
+		return fmt.Errorf("health checker context is required")
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.running {
@@ -118,7 +121,7 @@ func (h *activeHealthChecker) probe(ctx context.Context, backend *proxyBackend) 
 		return false
 	}
 	defer connection.Close()
-	stopCancellation := context.AfterFunc(ctx, func() { _ = connection.Close() })
+	stopCancellation := closeOnContextDone(ctx, connection)
 	defer stopCancellation()
 	deadline := time.Now().Add(h.config.Timeout)
 	if value, ok := ctx.Deadline(); ok && value.Before(deadline) {

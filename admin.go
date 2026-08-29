@@ -236,10 +236,7 @@ func serveSSE(ctx context.Context, writer *bufio.Writer, request *httpRequest, o
 		select {
 		case <-ctx.Done():
 			return nil
-		case event, ok := <-subscription.Events:
-			if !ok {
-				return nil
-			}
+		case event := <-subscription.Events:
 			if event.Sequence <= lastSent {
 				continue
 			}
@@ -247,6 +244,8 @@ func serveSSE(ctx context.Context, writer *bufio.Writer, request *httpRequest, o
 				return err
 			}
 			lastSent = event.Sequence
+		case <-subscription.Done:
+			return nil
 		case <-ticker.C:
 			if err := writeSSEPayload(chunked, writer, []byte(": heartbeat\n\n")); err != nil {
 				return err

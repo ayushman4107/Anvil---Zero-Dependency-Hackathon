@@ -16,6 +16,9 @@ const (
 	defaultShutdownMS     = 5_000
 	defaultForceCloseMS   = 1_000
 	defaultMaxRequests    = defaultMaxRequestsPerConnection
+	maxServerConnections  = 65_536
+	maxRequestsPerClient  = 1_000_000
+	maxConfiguredTimeout  = 24 * time.Hour
 )
 
 // Config contains the small runtime foundation shared by Anvil commands.
@@ -46,6 +49,9 @@ func DefaultConfig() Config {
 }
 
 func (c Config) Validate() error {
+	if len(c.Listen) > maxBackendAddressBytes {
+		return fmt.Errorf("listen address exceeds %d bytes", maxBackendAddressBytes)
+	}
 	_, portText, err := net.SplitHostPort(c.Listen)
 	if err != nil {
 		return fmt.Errorf("listen address %q must be host:port: %w", c.Listen, err)
@@ -54,28 +60,32 @@ func (c Config) Validate() error {
 	if err != nil || port < 0 || port > 65_535 {
 		return fmt.Errorf("listen port %q must be numeric and between 0 and 65535", portText)
 	}
-	if c.MaxConnections <= 0 {
-		return fmt.Errorf("max_connections must be greater than zero")
+	if c.MaxConnections <= 0 || c.MaxConnections > maxServerConnections {
+		return fmt.Errorf("max_connections must be between 1 and %d", maxServerConnections)
 	}
-	if c.ReadTimeoutMS <= 0 {
-		return fmt.Errorf("read_timeout_ms must be greater than zero")
+	if !validMilliseconds(c.ReadTimeoutMS, maxConfiguredTimeout) {
+		return fmt.Errorf("read_timeout_ms must be between 1 and %d", maxConfiguredTimeout/time.Millisecond)
 	}
-	if c.WriteTimeoutMS <= 0 {
-		return fmt.Errorf("write_timeout_ms must be greater than zero")
+	if !validMilliseconds(c.WriteTimeoutMS, maxConfiguredTimeout) {
+		return fmt.Errorf("write_timeout_ms must be between 1 and %d", maxConfiguredTimeout/time.Millisecond)
 	}
-	if c.IdleTimeoutMS <= 0 {
-		return fmt.Errorf("idle_timeout_ms must be greater than zero")
+	if !validMilliseconds(c.IdleTimeoutMS, maxConfiguredTimeout) {
+		return fmt.Errorf("idle_timeout_ms must be between 1 and %d", maxConfiguredTimeout/time.Millisecond)
 	}
-	if c.ShutdownMS <= 0 {
-		return fmt.Errorf("shutdown_timeout_ms must be greater than zero")
+	if !validMilliseconds(c.ShutdownMS, maxConfiguredTimeout) {
+		return fmt.Errorf("shutdown_timeout_ms must be between 1 and %d", maxConfiguredTimeout/time.Millisecond)
 	}
-	if c.ForceCloseMS <= 0 {
-		return fmt.Errorf("force_close_timeout_ms must be greater than zero")
+	if !validMilliseconds(c.ForceCloseMS, maxConfiguredTimeout) {
+		return fmt.Errorf("force_close_timeout_ms must be between 1 and %d", maxConfiguredTimeout/time.Millisecond)
 	}
-	if c.MaxRequests <= 0 {
-		return fmt.Errorf("max_requests_per_connection must be greater than zero")
+	if c.MaxRequests <= 0 || c.MaxRequests > maxRequestsPerClient {
+		return fmt.Errorf("max_requests_per_connection must be between 1 and %d", maxRequestsPerClient)
 	}
 	return nil
+}
+
+func validMilliseconds(value int, maximum time.Duration) bool {
+	return value > 0 && int64(value) <= maximum.Milliseconds()
 }
 
 func (c Config) httpServerConfig() httpServerConfig {

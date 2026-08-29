@@ -86,6 +86,9 @@ func readHTTPResponse(reader *bufio.Reader, limits httpLimits, requestMethod str
 	if err := validateConnectionFields(headers, "response headers"); err != nil {
 		return nil, err
 	}
+	if err := validateResponseFramingHeaders(statusCode, headers); err != nil {
+		return nil, err
+	}
 	if successfulConnectResponse(requestMethod, statusCode) || statusCode == 101 || headers.HasToken("Connection", "upgrade") || len(headers.Values("Upgrade")) != 0 {
 		return nil, newProtocolError(protocolUnsupportedFeature, "response headers", "tunnels and protocol upgrades are unsupported")
 	}
@@ -124,6 +127,15 @@ func readHTTPResponse(reader *bufio.Reader, limits httpLimits, requestMethod str
 	}
 	response.KeepAlive = response.BodyMode != bodyModeCloseDelimited && !headers.HasToken("Connection", "close")
 	return response, nil
+}
+
+func validateResponseFramingHeaders(statusCode int, headers headerFields) error {
+	if statusCode >= 100 && statusCode < 200 || statusCode == 204 {
+		if len(headers.Values("Content-Length")) != 0 || len(headers.Values("Transfer-Encoding")) != 0 {
+			return newProtocolError(protocolMalformedHeader, "response headers", "1xx and 204 responses cannot declare message framing")
+		}
+	}
+	return nil
 }
 
 func readStrictLine(reader *bufio.Reader, maximum int, section string) ([]byte, int, error) {

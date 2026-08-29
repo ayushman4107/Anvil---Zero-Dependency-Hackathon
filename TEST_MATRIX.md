@@ -49,6 +49,8 @@ No third-party test framework is permitted or needed.
 | HTTP-025 | P1 | HTTP/2 preface, Upgrade, CONNECT | Explicit safe rejection |
 | HTTP-026 | P1 | Expect: 100-continue | Implemented or consistent `417` |
 | HTTP-027 | P0 | Parser fuzz target | No panic, hang, unbounded allocation, or invalid success |
+| HTTP-028 | P0 | Forbidden 1xx/204 framing | Content-Length or Transfer-Encoding rejected; connection discarded |
+| HTTP-029 | P0 | Allocation-scale limits | Oversized configured parser limits rejected before allocation |
 
 ## Router
 
@@ -134,6 +136,8 @@ No third-party test framework is permitted or needed.
 | CONC-006 | P0 | Graceful shutdown | Acceptance stops; bounded drain; workers join |
 | CONC-007 | P1 | Repeated start/stop | No goroutine/connection accumulation |
 | CONC-008 | P1 | Race detector | No reported races |
+| CONC-009 | P0 | Cancellation callback join | Started socket closer terminates before ownership returns |
+| CONC-010 | P0 | Concurrent observer publication | Live delivery exactly follows monotonic ledger sequence without lock-held fan-out |
 
 ## Telemetry, dashboard, and receipt
 
@@ -153,6 +157,7 @@ No third-party test framework is permitted or needed.
 | OBS-012 | P1 | Future Last-Event-ID | Explicit gap plus retained-window replay |
 | OBS-013 | P0 | Dashboard/admin route boundary | Read-only loopback routes; public listener has no admin handlers |
 | OBS-014 | P1 | Runtime samples | Selected values have validated kinds and encode as JSON |
+| OBS-015 | P0 | Failure mapping reconciliation | Status, Proxy-Status, ledger reason, metric, and privacy agree |
 
 ## Experiment and benchmark
 
@@ -167,6 +172,7 @@ No third-party test framework is permitted or needed.
 | EXP-007 | P0 | Strict scenario JSON | Unknown fields, trailing values, invalid references, and bounds rejected |
 | EXP-008 | P0 | Three consecutive offline runs | Each receipt passes and ledger/benchmark counts reconcile |
 | EXP-009 | P0 | Fixture mode matrix | Healthy, delayed, failure, truncated, unavailable, and recovered behavior observed through Anvil codec |
+| EXP-010 | P0 | Scenario byte/arithmetic bounds | Oversized input and overflowing step arithmetic rejected before decode/schedule |
 | BENCH-001 | P0 | Bounded workers | Configured concurrency never exceeded |
 | BENCH-002 | P0 | Known response counts | Status and error totals reconcile |
 | BENCH-003 | P0 | Cancellation | Workers and connections terminate |
@@ -190,6 +196,8 @@ No third-party test framework is permitted or needed.
 | BUILD-005 | P1 | Clean checkout | Instructions are sufficient |
 | BUILD-006 | P1 | Single-file audit if claimed | One implementation source file |
 | BUILD-007 | P0 | Documentation audit | README, STDLIB, limits, license, proof present |
+| BUILD-008 | P0 | Allocation-bearing configuration audit | Platform-sized counts/durations rejected before make/convert |
+| BUILD-009 | P1 | Allocation benchmark | Only a measured hot path is optimized; before/after values recorded honestly |
 
 ## Acceptance gates
 

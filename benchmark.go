@@ -223,7 +223,7 @@ func runBenchmarkWorker(ctx context.Context, config benchmarkConfig, request *ht
 		}
 		beforeRead, beforeWrite := connection.readBytes, connection.writeBytes
 		currentConnection := connection
-		stopCancellation := context.AfterFunc(ctx, func() { _ = currentConnection.Close() })
+		stopCancellation := closeOnContextDone(ctx, currentConnection)
 		deadline := time.Now().Add(config.Timeout)
 		if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
 			deadline = contextDeadline

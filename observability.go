@@ -12,6 +12,10 @@ const (
 	defaultLedgerCapacity  = 2_048
 	defaultMaxSubscribers  = 32
 	defaultSubscriberQueue = 64
+	maxLedgerCapacity      = 1_000_000
+	maxSSESubscribers      = 1_024
+	maxSubscriberQueue     = 4_096
+	maxQueuedSSEEvents     = 1_000_000
 )
 
 type eventType string
@@ -60,8 +64,8 @@ type eventLedger struct {
 }
 
 func newEventLedger(capacity int) (*eventLedger, error) {
-	if capacity <= 0 {
-		return nil, fmt.Errorf("ledger capacity must be greater than zero")
+	if capacity <= 0 || capacity > maxLedgerCapacity {
+		return nil, fmt.Errorf("ledger capacity must be between 1 and %d", maxLedgerCapacity)
 	}
 	return &eventLedger{entries: make([]decisionEvent, capacity)}, nil
 }
@@ -113,11 +117,17 @@ var errSubscriberLimit = errors.New("SSE subscriber limit reached")
 type eventSubscription struct {
 	ID     uint64
 	Events <-chan decisionEvent
+	Done   <-chan struct{}
+}
+
+type sseSubscriber struct {
+	events chan decisionEvent
+	done   chan struct{}
 }
 
 type sseHub struct {
 	mu             sync.RWMutex
-	subscribers    map[uint64]chan decisionEvent
+	subscribers    map[uint64]sseSubscriber
 	nextSubscriber uint64
 	maxSubscribers int
 	queueCapacity  int
@@ -126,11 +136,11 @@ type sseHub struct {
 }
 
 func newSSEHub(maxSubscribers, queueCapacity int) (*sseHub, error) {
-	if maxSubscribers <= 0 || queueCapacity <= 0 {
-		return nil, fmt.Errorf("SSE subscriber count and queue capacity must be greater than zero")
+	if maxSubscribers <= 0 || maxSubscribers > maxSSESubscribers || queueCapacity <= 0 || queueCapacity > maxSubscriberQueue || maxSubscribers > maxQueuedSSEEvents/queueCapacity {
+		return nil, fmt.Errorf("SSE subscriber and queue bounds exceed the %d-event aggregate limit", maxQueuedSSEEvents)
 	}
 	return &sseHub{
-		subscribers:    make(map[uint64]chan decisionEvent, maxSubscribers),
+		subscribers:    make(map[uint64]sseSubscriber, maxSubscribers),
 		maxSubscribers: maxSubscribers,
 		queueCapacity:  queueCapacity,
 	}, nil
@@ -146,25 +156,29 @@ func (h *sseHub) subscribe() (eventSubscription, error) {
 		return eventSubscription{}, errSubscriberLimit
 	}
 	h.nextSubscriber++
-	queue := make(chan decisionEvent, h.queueCapacity)
-	h.subscribers[h.nextSubscriber] = queue
-	return eventSubscription{ID: h.nextSubscriber, Events: queue}, nil
+	subscriber := sseSubscriber{events: make(chan decisionEvent, h.queueCapacity), done: make(chan struct{})}
+	h.subscribers[h.nextSubscriber] = subscriber
+	return eventSubscription{ID: h.nextSubscriber, Events: subscriber.events, Done: subscriber.done}, nil
 }
 
 func (h *sseHub) unsubscribe(id uint64) {
 	h.mu.Lock()
-	queue := h.subscribers[id]
+	subscriber, exists := h.subscribers[id]
 	delete(h.subscribers, id)
-	if queue != nil {
-		close(queue)
-	}
 	h.mu.Unlock()
+	if exists {
+		close(subscriber.done)
+	}
 }
 
 func (h *sseHub) publish(event decisionEvent) {
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-	for _, queue := range h.subscribers {
+	queues := make([]chan decisionEvent, 0, len(h.subscribers))
+	for _, subscriber := range h.subscribers {
+		queues = append(queues, subscriber.events)
+	}
+	h.mu.RUnlock()
+	for _, queue := range queues {
 		select {
 		case queue <- event:
 		default:
@@ -182,14 +196,18 @@ func (h *sseHub) stats() (subscribers int, dropped uint64) {
 
 func (h *sseHub) close() {
 	h.mu.Lock()
+	done := make([]chan struct{}, 0, len(h.subscribers))
 	if !h.closed {
 		h.closed = true
-		for id, queue := range h.subscribers {
+		for id, subscriber := range h.subscribers {
 			delete(h.subscribers, id)
-			close(queue)
+			done = append(done, subscriber.done)
 		}
 	}
 	h.mu.Unlock()
+	for _, channel := range done {
+		close(channel)
+	}
 }
 
 type observabilityConfig struct {
@@ -209,13 +227,15 @@ func defaultObservabilityConfig() observabilityConfig {
 }
 
 type observability struct {
-	startedAt time.Time
-	now       func() time.Time
-	ledger    *eventLedger
-	hub       *sseHub
-	metrics   *proxyMetrics
-	pool      *backendPool
-	publishMu sync.Mutex
+	startedAt    time.Time
+	now          func() time.Time
+	ledger       *eventLedger
+	hub          *sseHub
+	metrics      *proxyMetrics
+	pool         *backendPool
+	deliveryMu   sync.Mutex
+	deliveryCond *sync.Cond
+	nextDelivery uint64
 
 	serversMu   sync.RWMutex
 	proxyServer *tcpServer
@@ -234,24 +254,34 @@ func newObservability(config observabilityConfig, pool *backendPool) (*observabi
 	if err != nil {
 		return nil, err
 	}
-	return &observability{
-		startedAt: config.Now(),
-		now:       config.Now,
-		ledger:    ledger,
-		hub:       hub,
-		metrics:   newProxyMetrics(),
-		pool:      pool,
-	}, nil
+	observability := &observability{
+		startedAt:    config.Now(),
+		now:          config.Now,
+		ledger:       ledger,
+		hub:          hub,
+		metrics:      newProxyMetrics(),
+		pool:         pool,
+		nextDelivery: 1,
+	}
+	observability.deliveryCond = sync.NewCond(&observability.deliveryMu)
+	return observability, nil
 }
 
 func (o *observability) publish(event decisionEvent) decisionEvent {
 	if o == nil {
 		return event
 	}
-	o.publishMu.Lock()
 	event = o.ledger.append(event, o.now().Sub(o.startedAt))
+	o.deliveryMu.Lock()
+	for event.Sequence != o.nextDelivery {
+		o.deliveryCond.Wait()
+	}
+	o.deliveryMu.Unlock()
 	o.hub.publish(event)
-	o.publishMu.Unlock()
+	o.deliveryMu.Lock()
+	o.nextDelivery++
+	o.deliveryCond.Broadcast()
+	o.deliveryMu.Unlock()
 	return event
 }
 
