@@ -63,15 +63,15 @@ const (
 )
 
 type serverStats struct {
-	State         string
-	Accepted      uint64
-	Admitted      uint64
-	Rejected      uint64
-	Active        int64
-	PeakActive    int64
-	Completed     uint64
-	HandlerErrors uint64
-	ForcedClosed  uint64
+	State         string `json:"state"`
+	Accepted      uint64 `json:"accepted"`
+	Admitted      uint64 `json:"admitted"`
+	Rejected      uint64 `json:"rejected"`
+	Active        int64  `json:"active"`
+	PeakActive    int64  `json:"peak_active"`
+	Completed     uint64 `json:"completed"`
+	HandlerErrors uint64 `json:"handler_errors"`
+	ForcedClosed  uint64 `json:"forced_closed"`
 }
 
 type tcpServer struct {

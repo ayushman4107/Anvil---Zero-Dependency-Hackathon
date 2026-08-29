@@ -31,6 +31,9 @@ func TestRunHelp(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Phase 5 resilience core") {
 		t.Fatalf("help output has stale resilience status: %q", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "Phase 6 causal observability plane") {
+		t.Fatalf("help output has stale observability status: %q", stdout.String())
+	}
 	if stderr.Len() != 0 {
 		t.Fatalf("help wrote to stderr: %q", stderr.String())
 	}

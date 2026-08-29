@@ -195,9 +195,9 @@ Reason code
 Numeric observations
 ```
 
-It stores no request/response bodies, cookies, authorization values, or raw private backend addresses.
+Phase 6 event types are request start, backend selection, attempt failure, retry scheduling, request completion, circuit transition, and health transition. It stores no request/response bodies, cookies, authorization values, or raw private backend addresses; those fields do not exist in the event type.
 
-Event publication is non-blocking. The data plane updates atomic metrics and attempts to publish to subscriber queues. A full subscriber queue increments a drop counter rather than blocking traffic.
+One short publisher mutex preserves the same monotonic ordering in the ring and subscriber fan-out. Work under it is restricted to a ring copy and non-blocking channel selects—never encoding or I/O. A full subscriber queue increments an atomic drop counter rather than blocking traffic. Subscription is registered before taking its replay snapshot; duplicate live/replay IDs are suppressed, avoiding a subscribe-time gap.
 
 ### 3.10 Metrics
 
@@ -208,7 +208,7 @@ Metrics combine:
 - Backend snapshots.
 - Selected `runtime/metrics` samples.
 
-Percentiles are approximated from buckets and labelled as estimates. Metrics are in-memory only.
+Request, completion, attempt, retry, success, generated gateway error, body-byte, status-class, typed failure, circuit/health transition, active, and peak counters are atomic. Percentiles are approximated from fixed upper-bound buckets and labelled as estimates. Metrics are in-memory only.
 
 ### 3.11 Dashboard and SSE
 
@@ -222,13 +222,17 @@ SSE rules:
 - Bounded per-client queue.
 - Reconnection support through `Last-Event-ID` where retained events remain available.
 
-### 3.11 Scenario runner and fixtures
+The administration server uses Anvil's parser for every request. Buffered dashboard, JSON metrics, and health responses retain the ordinary server writer. Only `/api/events` enters a narrow long-lived path that writes validated response headers, then uses `chunkedBodyWriter` for each SSE record. This preserves the public proxy's buffered response/commit model.
+
+Read-only routes are `/`, `/api/metrics`, `/api/events`, and `/healthz`. The listener accepts only an explicit loopback IP. It is supervised with the proxy listener so either server's unexpected termination cancels and joins the other.
+
+### 3.12 Scenario runner and fixtures
 
 Fixtures run on loopback using the same HTTP server engine. A fixture has an atomic behavior profile: healthy, delayed, fixed failure status, truncated response, or unavailable. Scenario steps are scheduled relative to experiment start and recorded before application.
 
 The receipt is calculated from ledger sequence/timing, not from dashboard state.
 
-### 3.12 Benchmark engine
+### 3.13 Benchmark engine
 
 The benchmark client reuses the request serializer and response parser. It owns a bounded worker set and reports:
 
@@ -253,8 +257,10 @@ It must enforce a maximum concurrency and duration and terminate cleanly on canc
 | Global admission | Buffered channel/semaphore |
 | Metrics counters | Atomics |
 | Latency buckets | Atomic counters |
-| Ledger ring | Single mutex or single-writer event loop, selected after benchmark |
-| SSE subscriber queue | Bounded channel per subscriber |
+| Ledger sequence/ring | Short mutex; copy only, no encoding or I/O |
+| Ledger publication order | Short publisher mutex around append and non-blocking fan-out |
+| SSE subscriber registry | RW mutex; fixed maximum subscriber count |
+| SSE subscriber queue | Fixed-capacity channel per subscriber; full queues increment drops |
 | Fixture behavior | Atomic snapshot |
 
 No lock may be held while dialing, reading, writing, sleeping, or publishing to an observer.

@@ -157,6 +157,13 @@ Framing is determined once, before body consumption.
 5. Receipt metrics are derived from ledger events and counters, not browser-rendered values.
 6. Percentiles are labelled as histogram estimates.
 7. SSE uses UTF-8 `text/event-stream`, event IDs, bounded queues, and heartbeat comments.
+8. Phase 6 accepts only an explicit loopback IP for the administration listener; hostnames, wildcard, and non-loopback addresses are rejected before bind.
+9. Event sequence assignment, ledger order, and live publication order are identical.
+10. Subscription is established before replay is captured; duplicate replay/live IDs are suppressed.
+11. An expired or future `Last-Event-ID` produces an explicit gap event and replays the retained window.
+12. A full subscriber queue never waits; it increments the observer-drop counter.
+13. Metrics JSON and the dashboard are read-only, non-cacheable, and served only by the administration listener.
+14. Runtime and histogram values are observations, never inputs to backend selection or circuit transitions.
 
 ## 15. Error mapping invariants
 

@@ -36,7 +36,10 @@ func runDevProxy(args []string, stdout, stderr io.Writer) int {
 	proxyCfg := defaultProxyConfig()
 	resilienceCfg := defaultResilienceConfig()
 	healthCfg := defaultActiveHealthConfig()
+	observabilityCfg := defaultObservabilityConfig()
+	adminCfg := defaultAdminConfig()
 	var upstreams backendFlagValues
+	adminListen := defaultAdminListen
 	backendMaxInFlight := defaultBackendInFlight
 	backendMaxIdle := defaultBackendIdleConnections
 	backendIdleTimeoutMS := int(defaultBackendIdleTimeout / time.Millisecond)
@@ -51,6 +54,7 @@ func runDevProxy(args []string, stdout, stderr io.Writer) int {
 	passiveIntervalMS := int(resilienceCfg.PassiveInterval / time.Millisecond)
 	healthIntervalMS := int(healthCfg.Interval / time.Millisecond)
 	healthTimeoutMS := int(healthCfg.Timeout / time.Millisecond)
+	sseHeartbeatMS := int(adminCfg.Heartbeat / time.Millisecond)
 
 	flags := flag.NewFlagSet("dev-proxy", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -83,6 +87,11 @@ func runDevProxy(args []string, stdout, stderr io.Writer) int {
 	flags.IntVar(&healthTimeoutMS, "health-timeout-ms", healthTimeoutMS, "active health request timeout in milliseconds")
 	flags.IntVar(&resilienceCfg.ActiveFailureThreshold, "health-failures", resilienceCfg.ActiveFailureThreshold, "active failures required to mark unhealthy")
 	flags.IntVar(&resilienceCfg.ActiveSuccessThreshold, "health-successes", resilienceCfg.ActiveSuccessThreshold, "active successes required to recover")
+	flags.StringVar(&adminListen, "admin-listen", adminListen, "loopback administration and dashboard address")
+	flags.IntVar(&observabilityCfg.LedgerCapacity, "ledger-capacity", observabilityCfg.LedgerCapacity, "maximum retained decision events")
+	flags.IntVar(&observabilityCfg.MaxSubscribers, "max-subscribers", observabilityCfg.MaxSubscribers, "maximum concurrent SSE subscribers")
+	flags.IntVar(&observabilityCfg.SubscriberQueue, "subscriber-queue", observabilityCfg.SubscriberQueue, "bounded pending events per SSE subscriber")
+	flags.IntVar(&sseHeartbeatMS, "sse-heartbeat-ms", sseHeartbeatMS, "SSE heartbeat interval in milliseconds")
 	flags.BoolVar(&proxyCfg.AddForwarded, "forwarded", proxyCfg.AddForwarded, "regenerate the RFC Forwarded field from the immediate peer")
 	flags.BoolVar(&proxyCfg.AddXForwarded, "x-forwarded", proxyCfg.AddXForwarded, "regenerate compatibility X-Forwarded fields")
 	flags.Usage = func() {
@@ -107,7 +116,11 @@ func runDevProxy(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%s dev-proxy: at least one --upstream is required\n", programName)
 		return exitUsage
 	}
-	if backendMaxInFlight <= 0 || backendMaxIdle <= 0 || backendIdleTimeoutMS <= 0 || dialTimeoutMS <= 0 || upstreamReadTimeoutMS <= 0 || upstreamWriteTimeoutMS <= 0 || retryTimeoutMS <= 0 || passiveIntervalMS <= 0 || circuitCooldownMS <= 0 || healthIntervalMS <= 0 || healthTimeoutMS <= 0 {
+	if err := validateAdminListen(adminListen); err != nil {
+		fmt.Fprintf(stderr, "%s dev-proxy: invalid admin listener: %v\n", programName, err)
+		return exitUsage
+	}
+	if backendMaxInFlight <= 0 || backendMaxIdle <= 0 || backendIdleTimeoutMS <= 0 || dialTimeoutMS <= 0 || upstreamReadTimeoutMS <= 0 || upstreamWriteTimeoutMS <= 0 || retryTimeoutMS <= 0 || passiveIntervalMS <= 0 || circuitCooldownMS <= 0 || healthIntervalMS <= 0 || healthTimeoutMS <= 0 || sseHeartbeatMS <= 0 || observabilityCfg.LedgerCapacity <= 0 || observabilityCfg.MaxSubscribers <= 0 || observabilityCfg.SubscriberQueue <= 0 {
 		fmt.Fprintf(stderr, "%s dev-proxy: backend limits and upstream timeouts must be greater than zero\n", programName)
 		return exitUsage
 	}
@@ -127,6 +140,25 @@ func runDevProxy(args []string, stdout, stderr io.Writer) int {
 	resilienceCfg.Selector = selectorPolicy(selector)
 	resilienceCfg.PassiveInterval = time.Duration(passiveIntervalMS) * time.Millisecond
 	resilienceCfg.CircuitCooldown = time.Duration(circuitCooldownMS) * time.Millisecond
+	var observer *observability
+	previousCircuitCallback := resilienceCfg.OnCircuitTransition
+	resilienceCfg.OnCircuitTransition = func(transition circuitTransition) {
+		if previousCircuitCallback != nil {
+			previousCircuitCallback(transition)
+		}
+		if observer != nil {
+			observer.recordCircuitTransition(transition)
+		}
+	}
+	previousHealthCallback := resilienceCfg.OnHealthTransition
+	resilienceCfg.OnHealthTransition = func(transition healthTransition) {
+		if previousHealthCallback != nil {
+			previousHealthCallback(transition)
+		}
+		if observer != nil {
+			observer.recordHealthTransition(transition)
+		}
+	}
 	pool, err := newBackendPoolWithConfig(backends, resilienceCfg)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s dev-proxy: invalid upstream: %v\n", programName, err)
@@ -137,6 +169,13 @@ func runDevProxy(args []string, stdout, stderr io.Writer) int {
 	proxyCfg.WriteTimeout = time.Duration(upstreamWriteTimeoutMS) * time.Millisecond
 	proxyCfg.RetryTimeout = time.Duration(retryTimeoutMS) * time.Millisecond
 	defer pool.Close()
+	observer, err = newObservability(observabilityCfg, pool)
+	if err != nil {
+		fmt.Fprintf(stderr, "%s dev-proxy: observability configuration: %v\n", programName, err)
+		return exitUsage
+	}
+	defer observer.close()
+	proxyCfg.Observability = observer
 	proxyHandler, err := newProxyHandler(pool, proxyCfg)
 	if err != nil {
 		fmt.Fprintf(stderr, "%s dev-proxy: proxy configuration: %v\n", programName, err)
@@ -167,10 +206,31 @@ func runDevProxy(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%s dev-proxy: server: %v\n", programName, err)
 		return exitFailure
 	}
+	adminCfg.Heartbeat = time.Duration(sseHeartbeatMS) * time.Millisecond
+	minimumAdminIdle := 3 * adminCfg.Heartbeat
+	if adminCfg.TCP.IdleTimeout <= minimumAdminIdle {
+		adminCfg.TCP.IdleTimeout = minimumAdminIdle + time.Second
+	}
+	adminListener, err := net.Listen("tcp", adminListen)
+	if err != nil {
+		_ = listener.Close()
+		fmt.Fprintf(stderr, "%s dev-proxy: admin listen: %v\n", programName, err)
+		return exitFailure
+	}
+	adminServer, err := newAdminServer(adminListener, adminCfg, observer)
+	if err != nil {
+		_ = adminListener.Close()
+		_ = listener.Close()
+		fmt.Fprintf(stderr, "%s dev-proxy: admin server: %v\n", programName, err)
+		return exitFailure
+	}
+	observer.setServers(server, adminServer)
 
-	fmt.Fprintf(stdout, "%s dev-proxy listening on %s with %d upstream(s)\n", programName, listener.Addr(), len(backends))
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	fmt.Fprintf(stdout, "%s dev-proxy listening on %s with %d upstream(s); dashboard http://%s/\n", programName, listener.Addr(), len(backends), adminListener.Addr())
+	signalContext, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	ctx, cancel := context.WithCancel(signalContext)
+	defer cancel()
 	var healthChecker *activeHealthChecker
 	if healthChecks {
 		healthCfg.Interval = time.Duration(healthIntervalMS) * time.Millisecond
@@ -186,8 +246,27 @@ func runDevProxy(args []string, stdout, stderr io.Writer) int {
 		}
 		defer healthChecker.Stop()
 	}
-	if err := server.Serve(ctx); err != nil {
-		fmt.Fprintf(stderr, "%s dev-proxy: %v\n", programName, err)
+	type serverResult struct {
+		name string
+		err  error
+	}
+	results := make(chan serverResult, 2)
+	go func() { results <- serverResult{name: "proxy", err: server.Serve(ctx)} }()
+	go func() { results <- serverResult{name: "admin", err: adminServer.Serve(ctx)} }()
+	first := <-results
+	unexpectedStop := signalContext.Err() == nil
+	cancel()
+	second := <-results
+	if first.err != nil {
+		fmt.Fprintf(stderr, "%s dev-proxy: %s server: %v\n", programName, first.name, first.err)
+		return exitFailure
+	}
+	if second.err != nil {
+		fmt.Fprintf(stderr, "%s dev-proxy: %s server: %v\n", programName, second.name, second.err)
+		return exitFailure
+	}
+	if unexpectedStop {
+		fmt.Fprintf(stderr, "%s dev-proxy: %s server stopped unexpectedly\n", programName, first.name)
 		return exitFailure
 	}
 	return exitOK

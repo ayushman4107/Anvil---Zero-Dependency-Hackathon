@@ -8,7 +8,7 @@ Anvil is built with Go 1.27.0. Its `go.mod` has no `require` directive, producti
 
 Production HTTP code does not import `net/http` or `net/http/httputil`. Compatibility tests use `net/http.ReadRequest` and `net/http.ReadResponse` only as an independent wire-format oracle.
 
-## Implemented substitutions — through Phase 5
+## Implemented substitutions — through Phase 6
 
 | Normally installed | Anvil implementation | Standard-library packages | Current boundary |
 |---|---|---|---|
@@ -22,8 +22,12 @@ Production HTTP code does not import `net/http` or `net/http/httputil`. Compatib
 | Health-check framework | One bounded worker per backend using Anvil's raw TCP HTTP codec, separate failure/recovery thresholds, explicit start/cancel/join lifecycle, and circuit half-open probe integration | `context`, `net`, `bufio`, `sync`, `time` | Active health is opt-in in `dev-proxy`; passive outcomes remain a distinct circuit input |
 | Retry/backoff package | GET/HEAD-only replay policy, downstream commitment guard, distinct-backend exclusion, attempt cap, total-time cap, and explicit application-status opt-in | `context`, `time`, `strings` | Unsafe methods are never automatically retried; no retry occurs after response commitment |
 | Upstream connection-pool package | Per-backend bounded idle stack, idle expiry, deadline reset, fully parsed keep-alive reuse, and discard on every unsafe lifecycle outcome | `net`, `sync`, `time` | No maintenance goroutine; pool close drains idle sockets and active transactions retain ownership |
+| Metrics stack such as Prometheus client libraries | Atomic request/status/error/byte/transition counters, active/peak gauges, fixed latency buckets, estimated percentiles, backend/TCP snapshots, and selected runtime samples | `sync/atomic`, `runtime/metrics`, `math`, `time` | In-memory JSON snapshot; no exporter, scrape dependency, or claim of exact quantiles |
+| Structured event/ledger package | Typed metadata-only events, monotonic sequence assignment, fixed-capacity ring, bounded replay, and explicit expired/future cursor gaps | `sync`, `time`, `encoding/json` | No bodies, sensitive headers, or backend addresses exist in the event schema |
+| SSE/WebSocket telemetry package | Separate raw-TCP admin handler, validated chunked headers, native chunk writer, event IDs/types, heartbeat comments, Last-Event-ID replay, bounded subscribers/queues, and drop counters | `net`, `bufio`, `context`, `sync`, `sync/atomic`, `time` | Non-blocking lossy fan-out prevents observer back-pressure; tests use `net/http` only as a wire oracle |
+| Dashboard framework and asset pipeline | Inline responsive HTML/CSS/vanilla JavaScript, same-origin JSON polling and EventSource timeline, topology cards, rates, status, estimated latency, and runtime/drop visibility | Go raw string constant, `encoding/json` | Offline and single-file-compatible; no CDN, npm, generated bundle, or external asset |
 | UUID/request-ID package | 128 random bits with UUID version/variant bits encoded as a bounded lowercase token | `crypto/rand`, `encoding/hex` | Generated IDs replace untrusted inbound Anvil IDs and remain stable across each transaction |
-| Assertion/test helper and protocol-fuzz package | Table-driven checks, fragmentation readers, deterministic mutation corpus, virtual clocks, native fuzz targets, polling helpers, byte comparisons, real sockets, raw failure fixtures, and a `net/http` compatibility oracle | `testing`, `bytes`, `math/rand`, `sync/atomic` | Covers framing, lifecycle, routes, sanitation, health thresholds, selectors, circuits, retries, connection reuse/discard, callback re-entry, and concurrent state |
+| Assertion/test helper and protocol-fuzz package | Table-driven checks, fragmentation readers, deterministic mutation corpus, virtual clocks, native fuzz targets, polling helpers, byte comparisons, real sockets, raw failure fixtures, and a `net/http` compatibility oracle | `testing`, `bytes`, `math/rand`, `sync/atomic` | Also covers ledger wrap, privacy, metric reconciliation, SSE framing/replay/gaps, subscriber saturation, admin isolation, and slow-observer behavior |
 
 ## Dependency verification
 
@@ -39,4 +43,4 @@ Expected output: no package paths after excluding Anvil's own main module.
 
 ## Honest status
 
-The product metrics, causal ledger, SSE dashboard, experiment runner, resilience receipt, benchmark engine, and JSON route/pool configuration are planned, not yet implemented, and therefore are not counted here. `dev-proxy` proves the Phase 5 resilience core but is not a claim that the final configured product command exists.
+The experiment runner, resilience receipt, benchmark engine, canonical configuration hash, and JSON route/pool configuration are planned, not yet implemented, and therefore are not counted here. `dev-proxy` proves the Phase 6 observable resilience core but is not a claim that the final configured product command exists.

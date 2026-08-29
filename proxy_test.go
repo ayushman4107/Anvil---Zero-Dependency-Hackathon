@@ -424,6 +424,11 @@ func TestBackendAndProxyConfigurationValidation(t *testing.T) {
 	if _, err := newProxyHandler(pool, config); err == nil {
 		t.Fatal("invalid retry status was accepted")
 	}
+	config = defaultProxyConfig()
+	config.RouteAlias = "bad route alias"
+	if _, err := newProxyHandler(pool, config); err == nil {
+		t.Fatal("invalid observability route alias was accepted")
+	}
 	policy := defaultResilienceConfig()
 	policy.Selector = "random"
 	if _, err := newBackendPoolWithConfig([]backendConfig{{Alias: "valid", Address: "127.0.0.1:80", MaxInFlight: 1}}, policy); err == nil {

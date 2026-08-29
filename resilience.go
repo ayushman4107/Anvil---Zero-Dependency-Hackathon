@@ -56,6 +56,7 @@ type resilienceConfig struct {
 	SlowLatencyThreshold    time.Duration
 	Now                     func() time.Time
 	OnCircuitTransition     func(circuitTransition)
+	OnHealthTransition      func(healthTransition)
 }
 
 func defaultResilienceConfig() resilienceConfig {
@@ -131,16 +132,16 @@ func (c *backendConfig) setDefaults() {
 }
 
 type backendSnapshot struct {
-	Alias             string
-	Healthy           bool
-	Circuit           circuitState
-	InFlight          int64
-	ActiveFailures    int
-	ActiveSuccesses   int
-	PassiveFailures   int
-	HalfOpenInFlight  int
-	HalfOpenSuccesses int
-	OpenedAt          time.Time
+	Alias             string       `json:"alias"`
+	Healthy           bool         `json:"healthy"`
+	Circuit           circuitState `json:"circuit"`
+	InFlight          int64        `json:"in_flight"`
+	ActiveFailures    int          `json:"active_failures"`
+	ActiveSuccesses   int          `json:"active_successes"`
+	PassiveFailures   int          `json:"passive_failures"`
+	HalfOpenInFlight  int          `json:"half_open_in_flight"`
+	HalfOpenSuccesses int          `json:"half_open_successes"`
+	OpenedAt          time.Time    `json:"opened_at,omitempty"`
 }
 
 type proxyBackend struct {
@@ -395,19 +396,32 @@ func (b *proxyBackend) recordPassive(outcome passiveOutcome, halfOpen bool, now 
 
 func (b *proxyBackend) recordActive(success bool) {
 	b.stateMu.Lock()
-	defer b.stateMu.Unlock()
+	previous := b.healthy
+	reason := "active_probe_failure"
 	if success {
 		b.activeFailures = 0
 		b.activeSuccesses++
 		if b.activeSuccesses >= b.policy.ActiveSuccessThreshold {
 			b.healthy = true
 		}
-		return
+		reason = "active_probe_recovered"
+	} else {
+		b.activeSuccesses = 0
+		b.activeFailures++
+		if b.activeFailures >= b.policy.ActiveFailureThreshold {
+			b.healthy = false
+		}
 	}
-	b.activeSuccesses = 0
-	b.activeFailures++
-	if b.activeFailures >= b.policy.ActiveFailureThreshold {
-		b.healthy = false
+	current := b.healthy
+	b.stateMu.Unlock()
+	if previous != current && b.policy.OnHealthTransition != nil {
+		b.policy.OnHealthTransition(healthTransition{
+			BackendAlias: b.config.Alias,
+			FromHealthy:  previous,
+			ToHealthy:    current,
+			At:           b.policy.Now(),
+			Reason:       reason,
+		})
 	}
 }
 

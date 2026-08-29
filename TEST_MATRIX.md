@@ -149,6 +149,10 @@ No third-party test framework is permitted or needed.
 | OBS-008 | P0 | Default admin bind | Loopback only |
 | OBS-009 | P0 | Receipt derivation | Values match source ledger events |
 | OBS-010 | P0 | Config/scenario hash | Stable for canonical identical input |
+| OBS-011 | P0 | Subscriber saturation | `503`; configured maximum is never exceeded |
+| OBS-012 | P1 | Future Last-Event-ID | Explicit gap plus retained-window replay |
+| OBS-013 | P0 | Dashboard/admin route boundary | Read-only loopback routes; public listener has no admin handlers |
+| OBS-014 | P1 | Runtime samples | Selected values have validated kinds and encode as JSON |
 
 ## Experiment and benchmark
 
