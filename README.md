@@ -2,7 +2,7 @@
 
 Anvil is an explainable reverse proxy and resilience-testing lab built for Track C of the Zero Dependency Hackathon. Its core promise is to make every routing, failover, circuit-breaker, and recovery decision observable and reproducible from one offline-capable binary.
 
-> Phase 0 status: repository foundation, command surface, configuration foundation, and concurrent raw-TCP echo proof are implemented. The reverse proxy and resilience features are intentionally not claimed yet.
+> Phase 1 status: the reusable raw-TCP lifecycle foundation is implemented and tested. The reverse proxy and resilience features are intentionally not claimed yet.
 
 ## Requirements
 
@@ -43,15 +43,28 @@ anvil experiment
 anvil bench
 ```
 
-These product commands are registered in Phase 0 and currently fail with an explicit status instead of pretending unfinished functionality exists.
+These product commands are registered and currently fail with an explicit status instead of pretending unfinished functionality exists.
 
-The Phase 0 networking proof can be started with:
+The TCP lifecycle proof can be started with:
 
 ```sh
 anvil dev-echo --listen 127.0.0.1:8080
 ```
 
-It accepts raw TCP clients concurrently, echoes bytes without an HTTP framework, bounds admitted connections, and applies a per-connection deadline. It will be replaced by Anvil's raw HTTP/1.1 connection state machine in the next phases.
+It accepts raw TCP clients concurrently and exercises the same reusable lifecycle foundation the HTTP engine will use.
+
+## Phase 1 TCP foundation
+
+The shipped server now provides:
+
+- One goroutine per admitted connection and no goroutine allocation for rejected connections.
+- A hard global admission limit with immediate bounded rejection.
+- Independent read, write, and idle deadlines refreshed at I/O boundaries.
+- Graceful shutdown that stops acceptance, permits a bounded drain, then cancels and closes stragglers.
+- Explicit ownership and joining of connection goroutines.
+- Atomic accepted, admitted, rejected, active, peak, completed, handler-error, and forced-close counters.
+- Containment of connection-handler panics so one faulty client path cannot crash the process.
+- Real-socket tests for saturation, slow-client isolation, deadline reclamation, graceful drain, forced close, repeated lifecycle use, and concurrent echo traffic.
 
 ## Planned differentiator
 
@@ -78,7 +91,7 @@ See `STDLIB.md` for substitutions actually implemented so far. Planned substitut
 
 ## Current limitations
 
-Phase 0 is not a reverse proxy. It does not yet parse HTTP, route requests, balance upstreams, run health checks, open circuits, publish telemetry, or execute experiments. These are acceptance-gated phases, and the README will be updated only when each capability is working and tested.
+Phase 1 is not a reverse proxy. It does not yet parse HTTP, route requests, balance upstreams, run health checks, open circuits, publish telemetry, or execute experiments. These are acceptance-gated phases, and the README will be updated only when each capability is working and tested.
 
 ## License
 

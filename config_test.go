@@ -16,7 +16,11 @@ func TestConfigValidation(t *testing.T) {
 		{name: "missing port", mutate: func(c *Config) { c.Listen = "localhost" }},
 		{name: "named port", mutate: func(c *Config) { c.Listen = "localhost:http" }},
 		{name: "zero connection limit", mutate: func(c *Config) { c.MaxConnections = 0 }},
+		{name: "zero read timeout", mutate: func(c *Config) { c.ReadTimeoutMS = 0 }},
+		{name: "zero write timeout", mutate: func(c *Config) { c.WriteTimeoutMS = 0 }},
 		{name: "zero timeout", mutate: func(c *Config) { c.IdleTimeoutMS = 0 }},
+		{name: "zero shutdown timeout", mutate: func(c *Config) { c.ShutdownMS = 0 }},
+		{name: "zero force-close timeout", mutate: func(c *Config) { c.ForceCloseMS = 0 }},
 	}
 
 	for _, test := range tests {

@@ -16,6 +16,9 @@ func TestRunHelp(t *testing.T) {
 	if !strings.Contains(stdout.String(), "anvil proxy") && !strings.Contains(stdout.String(), "proxy") {
 		t.Fatalf("help output does not describe proxy command: %q", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "Phase 1 raw-TCP lifecycle proof") {
+		t.Fatalf("help output has stale lifecycle status: %q", stdout.String())
+	}
 	if stderr.Len() != 0 {
 		t.Fatalf("help wrote to stderr: %q", stderr.String())
 	}
@@ -40,8 +43,8 @@ func TestPlannedCommandHelpIsHonest(t *testing.T) {
 	if code := run([]string{"proxy", "--help"}, &stdout, &stderr); code != exitOK {
 		t.Fatalf("proxy help exit code = %d, want %d", code, exitOK)
 	}
-	if !strings.Contains(stdout.String(), phase0Status) {
-		t.Fatalf("proxy help does not identify Phase 0 status: %q", stdout.String())
+	if !strings.Contains(stdout.String(), plannedStatus) {
+		t.Fatalf("proxy help does not identify planned status: %q", stdout.String())
 	}
 }
 

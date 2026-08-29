@@ -12,11 +12,11 @@ import (
 )
 
 const (
-	exitOK       = 0
-	exitFailure  = 1
-	exitUsage    = 2
-	programName  = "anvil"
-	phase0Status = "scaffolded; implementation begins in later phases"
+	exitOK        = 0
+	exitFailure   = 1
+	exitUsage     = 2
+	programName   = "anvil"
+	plannedStatus = "scaffolded; implementation begins in later phases"
 )
 
 func run(args []string, stdout, stderr io.Writer) int {
@@ -51,20 +51,20 @@ Commands:
   demo        Run the self-contained resilience demo (planned)
   experiment  Execute a deterministic failure experiment (planned)
   bench       Benchmark the Anvil data path (planned)
-  dev-echo    Run the Phase 0 raw-TCP concurrency proof
+  dev-echo    Run the Phase 1 raw-TCP lifecycle proof
   help        Show this help
 
-Phase 0 establishes the repository, command surface, configuration types, and
-raw TCP concurrency proof. Planned commands fail explicitly until implemented.`)
+The current build includes the Phase 1 raw TCP lifecycle foundation. Planned
+product commands fail explicitly until their acceptance gates are complete.`)
 }
 
 func runPlannedCommand(name string, args []string, stdout, stderr io.Writer) int {
 	if hasHelpFlag(args) {
-		fmt.Fprintf(stdout, "Usage: %s %s [options]\n\nStatus: %s.\n", programName, name, phase0Status)
+		fmt.Fprintf(stdout, "Usage: %s %s [options]\n\nStatus: %s.\n", programName, name, plannedStatus)
 		return exitOK
 	}
 
-	fmt.Fprintf(stderr, "%s %s: %s\n", programName, name, phase0Status)
+	fmt.Fprintf(stderr, "%s %s: %s\n", programName, name, plannedStatus)
 	return exitFailure
 }
 
@@ -83,7 +83,11 @@ func runDevEcho(args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	flags.StringVar(&cfg.Listen, "listen", cfg.Listen, "TCP address to listen on")
 	flags.IntVar(&cfg.MaxConnections, "max-connections", cfg.MaxConnections, "maximum concurrent connections")
+	flags.IntVar(&cfg.ReadTimeoutMS, "read-timeout-ms", cfg.ReadTimeoutMS, "per-read timeout in milliseconds")
+	flags.IntVar(&cfg.WriteTimeoutMS, "write-timeout-ms", cfg.WriteTimeoutMS, "per-write timeout in milliseconds")
 	flags.IntVar(&cfg.IdleTimeoutMS, "idle-timeout-ms", cfg.IdleTimeoutMS, "per-connection idle timeout in milliseconds")
+	flags.IntVar(&cfg.ShutdownMS, "shutdown-timeout-ms", cfg.ShutdownMS, "graceful drain timeout in milliseconds")
+	flags.IntVar(&cfg.ForceCloseMS, "force-close-timeout-ms", cfg.ForceCloseMS, "wait after force-closing connections in milliseconds")
 	flags.Usage = func() {
 		fmt.Fprintf(flags.Output(), "Usage: %s dev-echo [options]\n", programName)
 		flags.PrintDefaults()
