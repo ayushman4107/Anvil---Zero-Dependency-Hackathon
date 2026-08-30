@@ -6,6 +6,7 @@
 *.toml text eol=lf
 *.txt text eol=lf
 *.ps1 text eol=lf
+Makefile text eol=lf
 /.githooks/* text eol=lf
 LICENSE text eol=lf
 *.exe binary

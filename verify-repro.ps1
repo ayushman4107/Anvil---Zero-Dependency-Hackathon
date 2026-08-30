@@ -48,11 +48,11 @@ try {
 
     Push-Location $repository
     try {
-        & $goExecutable @arguments $first "."
+        & $goExecutable @arguments $first "./src"
         if ($LASTEXITCODE -ne 0) {
             throw "First reproducible build failed with exit code $LASTEXITCODE"
         }
-        & $goExecutable @arguments $second "."
+        & $goExecutable @arguments $second "./src"
         if ($LASTEXITCODE -ne 0) {
             throw "Second reproducible build failed with exit code $LASTEXITCODE"
         }

@@ -13,7 +13,7 @@ Anvil puts that lab behind one zero-dependency executable. The same decision led
 ## Sixty-second quick start
 
 ```powershell
-go build -trimpath -buildvcs=false -ldflags="-s -w -buildid=" -o anvil.exe .
+.\build.ps1
 .\anvil.exe demo
 ```
 
@@ -74,16 +74,16 @@ The data plane owns protocol and routing decisions. Observability receives bound
 
 ## Build
 
-From the repository root on Windows:
+From the repository root on Windows, one command verifies the dependency boundary and produces `anvil.exe`:
 
 ```powershell
-go build -trimpath -buildvcs=false -ldflags="-s -w -buildid=" -o anvil.exe .
+.\build.ps1
 ```
 
-On Linux or macOS:
+On Linux or macOS, the equivalent one-command build is:
 
 ```sh
-go build -trimpath -buildvcs=false -ldflags="-s -w -buildid=" -o anvil .
+make
 ```
 
 Run the applicable checks:
@@ -100,6 +100,24 @@ On Windows, run `.\verify-zero-dep.ps1` to enforce the source and module boundar
 Run `.\verify-repro.ps1` from PowerShell to execute that zero-dependency gate, build twice in an isolated temporary directory, and fail unless both SHA-256 hashes match.
 
 The repository also ships `.githooks/pre-commit`, which runs the same gate before a commit. Enable it once per clone with `git config core.hooksPath .githooks`; this checkout already has it enabled. The hook uses `go` from `PATH`, or the executable selected by `ANVIL_GO` when the toolchain is intentionally portable.
+
+## Repository layout
+
+```text
+Anvil/
+|-- README.md             product, commands, limits, benchmarks
+|-- ARCHITECTURE.md       data flow, ownership, security boundaries
+|-- STDLIB.md             standard-library substitutions and honest gaps
+|-- Makefile              one-command Unix/macOS build
+|-- build.ps1             one-command Windows build
+|-- src/                  implementation plus co-located Go tests
+|-- examples/             deterministic failure/recovery scenario
+|-- go.mod                empty dependency manifest
+|-- deps-proof.txt        captured dependency and build-hash proof
+`-- .zero-dep.toml        track and pitch metadata
+```
+
+Go convention keeps `*_test.go` beside the package under `src/`. Those files are the test suite: co-location lets edge-case tests exercise unexported parser, lifecycle, and state-machine boundaries without exporting internals or duplicating source into a cosmetic `tests/` directory.
 
 ## Command surface
 
@@ -298,7 +316,7 @@ The hardening audit changed behavior only where it found a correctness or resour
 Submission measurements were captured on Windows/amd64 with Go 1.27.0 and an AMD Ryzen AI 7 350. They are microbenchmarks, not end-to-end capacity claims:
 
 ```text
-go test -run '^$' -bench 'Benchmark(ReadHTTPRequest|BackendReserveRoundRobin)$' -benchmem -benchtime=2s -count=5 .
+go test -run '^$' -bench 'Benchmark(ReadHTTPRequest|BackendReserveRoundRobin)$' -benchmem -benchtime=2s -count=5 ./src
 ```
 
 | Benchmark | Five-run timing | Memory | Allocations |

@@ -3,12 +3,13 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestExampleScenarioMatchesBuiltInDemo(t *testing.T) {
-	data, err := os.ReadFile("examples/failure-recovery.json")
+	data, err := os.ReadFile(filepath.Join("..", "examples", "failure-recovery.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

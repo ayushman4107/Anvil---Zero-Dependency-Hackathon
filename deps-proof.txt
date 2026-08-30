@@ -43,7 +43,7 @@ Manifest check:
 go.mod contains only the module path and Go version; it has no require directive.
 
 Production direct-import check:
-go list -f '{{range .Imports}}{{println .}}{{end}}' .
+go list -f '{{range .Imports}}{{println .}}{{end}}' ./src
 
 Result:
 Every production direct import is a Go standard-library path. Production does not import net/http or net/http/httputil; net/http is test-only compatibility-oracle code.
@@ -54,9 +54,9 @@ Reproducible-build command (with Go 1.27.0 in PATH):
 The reproducibility verifier runs verify-zero-dep.ps1 before either build.
 
 Pinned flags:
-CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags="-s -w -buildid="
+CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags="-s -w -buildid=" ./src
 
 Result:
-first SHA-256:  470A0FF8351CDA0BE2727E0B3E83B25C12DFDD44202078E7D3A849066C683974
-second SHA-256: 470A0FF8351CDA0BE2727E0B3E83B25C12DFDD44202078E7D3A849066C683974
+first SHA-256:  5F81B626B8E2AE2C4A38CA1CEB0DB9ABE1A06B889525E7E155AF46F3624FAA20
+second SHA-256: 5F81B626B8E2AE2C4A38CA1CEB0DB9ABE1A06B889525E7E155AF46F3624FAA20
 byte-for-byte match: yes
