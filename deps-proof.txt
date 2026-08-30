@@ -1,4 +1,4 @@
-Anvil Phase 9 safeguard-checkout zero-dependency proof
+Anvil final-checkout zero-dependency proof
 Generated: 2026-08-30
 Toolchain: go version go1.27.0 windows/amd64
 Environment: GOVERSION=go1.27.0 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 GOTOOLCHAIN=local

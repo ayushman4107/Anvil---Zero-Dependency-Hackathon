@@ -2,7 +2,7 @@
 
 ## Scope
 
-This file records only functionality present in the Phase 9 submission candidate. Planned, partial, dead, and stretch-only substitutions are excluded.
+This file records only functionality present in the submission candidate. Planned, partial, dead, and stretch-only substitutions are excluded.
 
 Anvil is built with Go 1.27.0. Its `go.mod` has no `require` directive, production imports resolve only to the Go standard library, no package source is vendored, and the runtime does not invoke separately installed tools or services.
 
@@ -28,7 +28,7 @@ Production HTTP code does not import `net/http` or `net/http/httputil`. Compatib
 | Dashboard framework and asset pipeline | Inline responsive HTML/CSS/vanilla JavaScript, same-origin JSON polling and EventSource timeline, topology cards, rates, status, estimated latency, and runtime/drop visibility | Go raw string constant, `encoding/json` | Offline and single-file-compatible; no CDN, npm, generated bundle, or external asset |
 | Load generator such as hey, wrk, or vegeta | Fixed worker set, optional pacing, bounded duration/count, owned persistent connections, wire-byte accounting, error/status classes, cancellation, and fixed latency buckets | `net`, `bufio`, `context`, `sync`, `sync/atomic`, `time` | Uses Anvil's serializer/parser; no external process or high-level HTTP client |
 | Chaos/fixture framework | In-process loopback backends with atomic immutable healthy, delayed, failure, truncated, unavailable, and recovered profiles | `net`, `sync/atomic`, `time` | Uses Anvil's TCP lifecycle and HTTP codec; unavailable dial behavior is injected at Anvil's dial seam |
-| Scenario/configuration framework | Strict unknown-field-rejecting JSON, hard resource limits, seeded relative jitter, stable normalized encoding, and SHA-256 identity | `encoding/json`, `crypto/sha256`, `math/rand`, `sort` | Phase 7 experiment schema only; general proxy route/pool JSON remains gated |
+| Scenario/configuration framework | Strict unknown-field-rejecting JSON, hard resource limits, seeded relative jitter, stable normalized encoding, and SHA-256 identity | `encoding/json`, `crypto/sha256`, `math/rand`, `sort` | Experiment schema only; general proxy route/pool JSON remains gated |
 | Assertion/reporting framework | Ledger-derived success/failure streak, failover and recovery measurements, benchmark reconciliation, stable text, and JSON receipts | `encoding/json`, `fmt`, `sort` | Failed assertions produce a non-zero process exit; receipts are controlled-lab evidence, not certification |
 | UUID/request-ID package | 128 random bits with UUID version/variant bits encoded as a bounded lowercase token | `crypto/rand`, `encoding/hex` | Generated IDs replace untrusted inbound Anvil IDs and remain stable across each transaction |
 | Assertion/test helper and protocol-fuzz package | Table-driven checks, fragmentation readers, deterministic mutation corpus, virtual clocks, four native fuzz targets, allocation benchmarks, byte comparisons, real sockets, raw failure fixtures, and a `net/http` compatibility oracle | `testing`, `bytes`, `math/rand`, `sync/atomic` | Also covers Slowloris/isolation, allocation caps, joined cancellation, forbidden no-content framing, observer ordering, privacy, reconciliation, SSE saturation, and browser/curl compatibility |
@@ -86,4 +86,4 @@ The captured final-checkout output is in `deps-proof.txt`; `verify-repro.ps1` en
 
 ## Honest status
 
-The experiment runner, fault fixtures, benchmark engine, canonical scenario hash, assertions, resilience receipts, and Phase 8 hardening gates are implemented. General JSON route/pool configuration is not shipped, so `proxy` remains gated and `dev-proxy` remains the manual proxy surface. Structured logging, DNS, TLS, compression, rate limiting, and the Single File bonus are not counted. Scenarios, receipts, compatibility checks, and benchmarks describe bounded local evidence; they do not claim production readiness or certification.
+The experiment runner, fault fixtures, benchmark engine, canonical scenario hash, assertions, resilience receipts, and hardening gates are implemented. General JSON route/pool configuration is not shipped, so `proxy` remains gated and `dev-proxy` remains the manual proxy surface. Structured logging, DNS, TLS, compression, rate limiting, and the Single File bonus are not counted. Scenarios, receipts, compatibility checks, and benchmarks describe bounded local evidence; they do not claim production readiness or certification.

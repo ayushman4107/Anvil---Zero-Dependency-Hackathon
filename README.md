@@ -2,7 +2,7 @@
 
 **Every failover leaves a receipt.** Anvil is an explainable reverse proxy and resilience-testing lab built for Track C of the Zero Dependency Hackathon. It makes routing, retry, circuit-breaker, and recovery decisions observable and reproducible from one offline-capable binary.
 
-> Submission status: the mandatory failure/recovery story is complete and frozen. Phase 9 adds no feature scope; its only runtime correction makes experiment shutdown join every lab service before fixture state is captured in the receipt.
+> Submission status: the mandatory failure/recovery story is complete and frozen. Experiment shutdown joins every lab service before fixture state is captured in the receipt.
 
 ## The problem
 
@@ -138,7 +138,7 @@ anvil dev-echo --listen 127.0.0.1:8080
 
 It accepts raw TCP clients concurrently and exercises the same reusable lifecycle foundation the HTTP engine will use.
 
-The Phase 3 HTTP proof can be started with:
+The raw HTTP server proof can be started with:
 
 ```sh
 anvil dev-http --listen 127.0.0.1:8080
@@ -146,7 +146,7 @@ anvil dev-http --listen 127.0.0.1:8080
 
 It exposes `GET /health`, `GET /hello/:name`, and `POST /echo` through Anvil's own parser, router, and serializer. It is deliberately labelled as a development proof rather than the unfinished proxy product.
 
-The Phase 6 observable proxy proof accepts one or more repeatable upstreams:
+The observable proxy proof accepts one or more repeatable upstreams:
 
 ```sh
 anvil dev-proxy --listen 127.0.0.1:8080 \
@@ -170,7 +170,7 @@ Open `http://127.0.0.1:9090/` for the dashboard. The administration listener is 
 
 Ledger, subscriber, and SSE queue limits are configurable with `--ledger-capacity`, `--max-subscribers`, and `--subscriber-queue`.
 
-## Phase 1 TCP foundation
+## TCP foundation
 
 The shipped server now provides:
 
@@ -183,7 +183,7 @@ The shipped server now provides:
 - Containment of connection-handler panics so one faulty client path cannot crash the process.
 - Real-socket tests for saturation, slow-client isolation, deadline reclamation, graceful drain, forced close, repeated lifecycle use, and concurrent echo traffic.
 
-## Phase 2 HTTP/1.1 codec
+## HTTP/1.1 codec
 
 The codec operates on `bufio.Reader` and `io.Writer` boundaries without `net/http` or `net/http/httputil`. It currently provides:
 
@@ -202,9 +202,9 @@ The codec operates on `bufio.Reader` and `io.Writer` boundaries without `net/htt
 - Fixed, chunked, and close-delimited upstream response parsing.
 - Table-driven protocol cases, arbitrary-fragment readers, deterministic mutation coverage, and native Go fuzz targets.
 
-## Phase 3 HTTP server and route tree
+## HTTP server and route tree
 
-The codec is now connected to the bounded Phase 1 TCP lifecycle. The network-facing slice provides:
+The codec is connected to the bounded TCP lifecycle. The network-facing slice provides:
 
 - One `bufio.Reader` and writer per admitted connection, with sequential HTTP/1.1 keep-alive and a configurable request-count bound.
 - Correct default persistence and explicit closure for `Connection: close`, request-limit exhaustion, protocol errors, and internal handler failures.
@@ -218,7 +218,7 @@ The codec is now connected to the bounded Phase 1 TCP lifecycle. The network-fac
 
 Requests are processed one at a time on each connection. Anvil does not execute pipelined requests concurrently; a fully buffered next request is retained and processed only after the previous response completes.
 
-## Phase 4 bounded reverse-proxy transaction
+## Bounded reverse-proxy transaction
 
 The first complete client-to-upstream vertical slice now provides:
 
@@ -235,9 +235,9 @@ The first complete client-to-upstream vertical slice now provides:
 - Conservative downstream commitment state that becomes immutable before encoded response bytes enter the downstream writer.
 - Real-socket tests using two Anvil-engine fixtures, a standard-library client oracle, malformed raw fixtures, one-attempt proof, and concurrent admission stress.
 
-## Phase 5 resilience core
+## Resilience core
 
-The Phase 4 transaction boundary is now governed by a backend-local resilience engine:
+The proxy transaction boundary is governed by a backend-local resilience engine:
 
 - Immutable backend identity/configuration is separated from mutex-protected health/circuit state, atomic in-flight counts, bounded admission, and an independently locked idle-connection pool.
 - Stable round-robin and least-in-flight selectors consider both active health and circuit permission. A health-ineligible or open backend is never selected.
@@ -248,13 +248,13 @@ The Phase 4 transaction boundary is now governed by a backend-local resilience e
 - Application statuses are not retried unless explicitly configured. If no alternate backend is available, the buffered upstream response is returned rather than replaced with a fabricated gateway error.
 - Per-backend keep-alive pools have fixed idle capacities and expiry. Only completely parsed persistent responses are reusable; close-delimited, `Connection: close`, failed, timed-out, canceled, malformed, and surplus connections are discarded.
 - Every upstream response carries an Anvil `Proxy-Status` member. Generated failures use RFC 9209 error tokens, while `next-hop` contains only the configured public backend alias—not its private address.
-- Snapshots expose coherent health/circuit/counter state for the next phase's ledger and dashboard without making observability own data-plane state.
+- Snapshots expose coherent health/circuit/counter state for the ledger and dashboard without making observability own data-plane state.
 
 Deterministic virtual-time state-machine tests cover opening, exclusion, bounded half-open admission, recovery, cooldown restart, callback re-entry, active health thresholds, safe retry, unsafe-method refusal, reuse/discard, and concurrent state access. The complete suite is race-detector compatible with the documented MinGW-w64 toolchain on Windows.
 
-## Phase 6 causal observability
+## Causal observability
 
-The observability plane makes Phase 5 decisions inspectable without becoming part of their control path:
+The observability plane makes resilience decisions inspectable without becoming part of their control path:
 
 - A fixed-capacity ring assigns monotonic sequence IDs under one short memory-only critical section. Retained replay reports oldest/latest sequence and explicit gaps.
 - Events contain only request IDs, route/backend aliases, typed reasons, state transitions, status, attempt, and numeric timing. The schema has no body, header, cookie, authorization, or backend-address fields.
@@ -269,7 +269,7 @@ The observability plane makes Phase 5 decisions inspectable without becoming par
 
 Real-socket tests validate browser-consumable JSON/HTML, native chunked SSE framing through a standard-library client oracle, heartbeat, retained replay, expired replay gaps, subscriber saturation, shutdown, privacy, concurrent metrics, and slow-observer isolation.
 
-## Phase 7 deterministic experiments and receipts
+## Deterministic experiments and receipts
 
 The product story is now self-contained and evidence-driven:
 
@@ -281,9 +281,9 @@ The product story is now self-contained and evidence-driven:
 - Receipts derive request success, failure streak, failover, and recovery from sequenced ledger events. Benchmark/ledger reconciliation is itself an assertion rather than an assumed property.
 - The built-in `demo` and checked-in `examples/failure-recovery.json` execute the same canonical scenario. Three consecutive offline recovery runs are part of the automated suite.
 
-## Phase 8 protocol and concurrency hardening
+## Protocol and concurrency hardening
 
-Phase 8 changes behavior only where the audit found a correctness or resource-safety defect:
+The hardening audit changed behavior only where it found a correctness or resource-safety defect:
 
 - Scenario files are capped at 1 MiB, and schedule validation uses overflow-safe integer comparisons before duration conversion or jitter resolution.
 - Downstream connections, per-connection requests, backend counts/admission/idle pools, HTTP limits, ledger entries, SSE subscribers/queues, scenario load, and CLI time values are bounded before allocation or conversion.
@@ -293,11 +293,9 @@ Phase 8 changes behavior only where the audit found a correctness or resource-sa
 - Native fuzzing now covers request, response, chunk-size, and strict-scenario parsers. Dedicated tests exercise an actual HTTP Slowloris, slow-upstream isolation, cancellation joining, mapping/privacy reconciliation, and allocation-scale rejection.
 - Measured round-robin selection dropped from two allocations/40 bytes to one allocation/16 bytes per reserve/release operation on the project machine; no unmeasured parser rewrite was attempted.
 
-See `HARDENING.md` for exact commands, evidence, defect records, machine-local measurements, and remaining limitations.
-
 ## Measured benchmarks
 
-Phase 9 submission measurements were captured on Windows/amd64 with Go 1.27.0 and an AMD Ryzen AI 7 350. They are microbenchmarks, not end-to-end capacity claims:
+Submission measurements were captured on Windows/amd64 with Go 1.27.0 and an AMD Ryzen AI 7 350. They are microbenchmarks, not end-to-end capacity claims:
 
 ```text
 go test -run '^$' -bench 'Benchmark(ReadHTTPRequest|BackendReserveRoundRobin)$' -benchmem -benchtime=2s -count=5 .
@@ -316,31 +314,18 @@ Results are machine-local evidence. They do not imply Internet-scale throughput,
 |---|---|---|
 | STDLIB Log | Claimed | `STDLIB.md` records only shipped substitutions and the exact direct-import inventory |
 | Package Killer | Claimed for the required circuit-breaker behavior, not API compatibility | `STDLIB.md` compares supported state, threshold, cooldown, probe, callback, health, and ledger semantics with `sony/gobreaker`; deterministic transition and race tests cover Anvil's behavior |
-| Reproducible Build | Claimed | `verify-repro.ps1` and `RELEASE_EVIDENCE.md` record the pinned command and matching SHA-256 hashes |
+| Reproducible Build | Claimed | `verify-repro.ps1` performs the pinned build twice; `deps-proof.txt` records the matching SHA-256 hashes |
 | Single File | **Not claimed** | 6,212 production lines across 27 Go files are intentionally kept componentized; merging them during freeze would make the result harder to audit and explain |
 
-## Phase 9 submission freeze
+## Submission verification
 
-Phase 9 adds no proxy, protocol, routing, resilience, observability, fixture-mode, or benchmark feature. A release-gate regression exposed a receipt snapshot racing the fixture handler's final accounting; experiments now stop health workers, close the upstream pool, cancel and join every lab server, and only then capture ledger/fixture state. The assertion-failure CLI test also uses deterministic unavailable fixtures instead of assuming failover always exceeds 1 ms.
+The release gate exposed a receipt snapshot racing the fixture handler's final accounting. Experiments now stop health workers, close idle upstreams, cancel and join every lab server, and only then capture ledger and fixture state. The assertion-failure CLI test uses deterministic unavailable fixtures instead of timing assumptions.
 
-The rest of Phase 9 finalizes the judge-first README, shipped-only STDLIB log, narrow Package Killer comparison, Track C metadata, dependency capture, reproducible-build verifier, exact demo runbook, benchmark environment, bonus decisions, and repository-hygiene evidence.
-
-See `RELEASE_EVIDENCE.md` for the exact final commands, results, matching artifact hashes, and three submitted-binary demo receipts.
+The checked-in dependency gate, reproducibility verifier, standard test suite, race tests, fuzz targets, compatibility tests, deterministic experiments, and receipt assertions provide the submission evidence. Exact dependency and build-hash output is captured in `deps-proof.txt`.
 
 ## Competitive differentiator
 
 Anvil's competitive edge is causal resilience evidence: a bounded decision ledger explains why an upstream was selected or skipped, when health and circuit state changed, what the client observed, and how the system recovered. Deterministic experiments turn that ledger into a machine-readable and human-readable resilience receipt.
-
-The mandatory design, protocol boundaries, test strategy, demo, and execution gates are documented in:
-
-- `PROJECT_SPEC.md`
-- `ARCHITECTURE.md`
-- `PROTOCOL_INVARIANTS.md`
-- `TEST_MATRIX.md`
-- `DEMO_SCRIPT.md`
-- `HARDENING.md`
-- `RELEASE_EVIDENCE.md`
-- `KICKOFF_EXECUTION_PLAN.md`
 
 ## Zero-dependency boundary
 
@@ -350,7 +335,7 @@ The mandatory design, protocol boundaries, test strategy, demo, and execution ga
 - The runtime does not shell out to tools or depend on network services.
 - The raw server and proxy core do not use `net/http`; tests may use it only as an independent compatibility oracle.
 
-See `STDLIB.md` for the final submission inventory. The former planning draft is retained only as a pointer to that evidence and contains no unshipped substitution claims.
+See `STDLIB.md` for the final submission inventory and dependency-boundary details.
 
 ## Current limitations
 
